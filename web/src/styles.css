@@ -1,0 +1,439 @@
+:root {
+  --bg: #f6f6f3;
+  --surface: #ffffff;
+  --border: #e4e3de;
+  --text: #1f2328;
+  --muted: #6b6f76;
+  --subtle: #f4f3ef;
+  --accent: #8c1d18;
+  --accent-hover: #741612;
+  --live: #b26b00;
+  --error: #b42318;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 var(--sans);
+}
+
+.page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 32px 16px 80px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font: 600 14px var(--sans);
+  cursor: pointer;
+}
+
+.fixture-select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: 13px var(--mono);
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+button.primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.status {
+  color: var(--muted);
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.status-live {
+  color: var(--live);
+}
+
+.status-error {
+  color: var(--error);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 22px 18px;
+}
+
+.empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 40px 0 28px;
+  margin: 0;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+/* Runs */
+
+.run-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: none;
+}
+
+.run-divider > span:first-child {
+  font-weight: 650;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.run-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.run + .run {
+  margin-top: 10px;
+}
+
+/* Items appear with a short fade so a newly arrived event is noticeable. */
+
+.item {
+  animation: arrive 0.25s ease-out;
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+/* Tool calls */
+
+.tool-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 8px;
+  margin: 2px -8px;
+  background: none;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-row:hover {
+  background: var(--subtle);
+}
+
+.badge {
+  flex: none;
+  min-width: 52px;
+  text-align: center;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-read {
+  background: #e9f0fa;
+  color: #2b5797;
+}
+
+.badge-write {
+  background: #fcf0d9;
+  color: #8a5800;
+}
+
+.badge-exec {
+  background: #e1f1ee;
+  color: #12675d;
+}
+
+.badge-agent {
+  background: #efe8fb;
+  color: #5e35a6;
+}
+
+.badge-other {
+  background: #edeef0;
+  color: #4a5361;
+}
+
+.tool-summary {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A call whose tool_result came back with is_error: true. Red is reserved for this, so no tool badge uses it. */
+.fail-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--error);
+  font: 700 12px var(--sans);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.fail-mark::before {
+  content: "✕";
+  display: inline-grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--error);
+  color: #fff;
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+.tool-failed .tool-result {
+  background: #fff3f1;
+  border-color: #f2c2bc;
+  border-left: 3px solid var(--error);
+}
+
+.tool-failed .tool-result pre {
+  color: #8a1c12;
+}
+
+.chevron {
+  flex: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.tool-input {
+  margin: 2px 0 8px 62px;
+  padding: 10px 12px;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: 12.5px/1.5 var(--mono);
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Tool results: what the model was shown after the call ran */
+
+.tool-result {
+  margin: 0 0 8px 62px;
+  padding: 7px 12px;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.tool-result pre {
+  margin: 0;
+  font: 12.5px/1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-result pre.expanded {
+  max-height: 480px;
+  overflow: auto;
+}
+
+.tool-result-empty {
+  color: var(--muted);
+  font: 12px var(--mono);
+}
+
+.fold-toggle {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font: italic 12px var(--sans);
+  cursor: pointer;
+}
+
+.fold-toggle:hover {
+  color: var(--text);
+}
+
+/* Assistant text (markdown) */
+
+.text-block {
+  position: relative;
+  margin: 16px 0 10px;
+  padding: 12px 14px 10px;
+  background: #fcfcfa;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* Small tag sitting on the box's top-left border, marking this as assistant text rather than a tool call. */
+.text-label {
+  position: absolute;
+  top: -9px;
+  left: 10px;
+  padding: 0 7px;
+  font: 600 11px/16px var(--mono);
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md p,
+.md ul,
+.md ol {
+  margin: 0.45em 0;
+}
+
+.md ul,
+.md ol {
+  padding-left: 1.4em;
+}
+
+.md li + li {
+  margin-top: 0.15em;
+}
+
+.md code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--subtle);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+.md pre {
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+
+.md pre code {
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+}
+
+.md table {
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+}
+
+.md h1,
+.md h2,
+.md h3 {
+  font-size: 1.05em;
+  margin: 0.8em 0 0.3em;
+}
+
+@media (max-width: 560px) {
+  .card {
+    padding: 4px 14px 14px;
+  }
+  .tool-input,
+  .tool-result {
+    margin-left: 0;
+  }
+}
