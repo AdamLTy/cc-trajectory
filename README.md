@@ -63,7 +63,7 @@ renders the trajectory as it arrives. Follow-up prompts resume the same session,
 ## Getting started
 
 ```bash
-git clone https://github.com/AdamLTy/cs2860_assignment_1.git cc-trajectory
+git clone https://github.com/AdamLTy/cc-trajectory.git
 cd cc-trajectory
 npm install
 npm run dev
