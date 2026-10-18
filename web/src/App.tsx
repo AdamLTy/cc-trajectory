@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react"
 import { TextBlock } from "./components/TextBlock.tsx";
 import { ToolCall } from "./components/ToolCall.tsx";
 import { readNdjson } from "./ndjson.ts";
-import { emptyTrajectory, reducer, type Run } from "./trajectory.ts";
+import { emptyTrajectory, reducer, type Run, type RunStatus } from "./trajectory.ts";
 
 type Status = { kind: "idle" } | { kind: "streaming" } | { kind: "done" } | { kind: "error"; message: string };
 
@@ -32,9 +32,12 @@ export function App() {
       const res = await fetch(`/api/replay?file=${encodeURIComponent(fixture)}`);
       if (!res.ok || !res.body) throw new Error(`replay request failed (HTTP ${res.status})`);
       for await (const event of readNdjson(res.body)) dispatch({ type: "event", event });
+      dispatch({ type: "end" });
       setStatus({ kind: "done" });
     } catch (err) {
-      setStatus({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+      const message = err instanceof Error ? err.message : String(err);
+      dispatch({ type: "end", error: message });
+      setStatus({ kind: "error", message });
     }
   }
 
@@ -73,18 +76,46 @@ export function App() {
 }
 
 function RunView({ run }: { run: Run }) {
+  const ended = run.status !== "running";
   return (
     <section className="run">
       <div className="run-divider">
         <span>Run {run.index}</span>
         {run.sessionId && <span className="mono">session {run.sessionId.slice(0, 8)}…</span>}
         {run.model && <span className="mono">{run.model}</span>}
+        <span className="run-line" />
+        <RunStatusBadge status={run.status} />
       </div>
       {run.items.map((item) =>
-        item.kind === "text" ? <TextBlock key={item.key} text={item.text} /> : <ToolCall key={item.key} item={item} cwd={run.cwd} />,
+        item.kind === "text" ? (
+          <TextBlock key={item.key} text={item.text} />
+        ) : (
+          <ToolCall key={item.key} item={item} cwd={run.cwd} runEnded={ended} />
+        ),
+      )}
+      {run.failure && (
+        <div className="run-error">
+          <strong>{run.failure.kind}</strong>
+          {run.failure.message !== run.failure.kind && <span>{run.failure.message}</span>}
+        </div>
       )}
     </section>
   );
+}
+
+function RunStatusBadge({ status }: { status: RunStatus }) {
+  switch (status) {
+    case "running":
+      return (
+        <span className="run-status run-status-running">
+          <span className="dot" /> running
+        </span>
+      );
+    case "finished":
+      return <span className="run-status run-status-finished">✓ finished</span>;
+    case "failed":
+      return <span className="run-status run-status-failed">✕ failed</span>;
+  }
 }
 
 function StatusText({ status, eventCount }: { status: Status; eventCount: number }) {

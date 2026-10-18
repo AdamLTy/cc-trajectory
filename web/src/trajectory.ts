@@ -1,4 +1,4 @@
-import { isAssistant, isInit, isUser, type StreamEvent, type ToolResultContent } from "./events.ts";
+import { isAssistant, isInit, isResult, isUser, type StreamEvent, type ToolResultContent } from "./events.ts";
 
 export interface TextItem {
   kind: "text";
@@ -24,12 +24,16 @@ export interface ToolResult {
 
 export type Item = TextItem | ToolItem;
 
+export type RunStatus = "running" | "finished" | "failed";
+
 export interface Run {
   index: number;
   sessionId: string;
   model: string;
   cwd: string;
   items: Item[];
+  status: RunStatus;
+  failure?: { kind: string; message: string };
 }
 
 export interface Trajectory {
@@ -39,11 +43,28 @@ export interface Trajectory {
 
 export const emptyTrajectory: Trajectory = { runs: [], eventCount: 0 };
 
-export type Action = { type: "reset" } | { type: "event"; event: StreamEvent };
+// "end" is dispatched when the event stream closes, with an error if the request itself failed.
+export type Action = { type: "reset" } | { type: "event"; event: StreamEvent } | { type: "end"; error?: string };
 
 export function reducer(state: Trajectory, action: Action): Trajectory {
   if (action.type === "reset") return emptyTrajectory;
+  if (action.type === "end") return endStream(state, action.error);
   return applyEvent(state, action.event);
+}
+
+function newRun(index: number, fields: Partial<Run> = {}): Run {
+  return { index, sessionId: "", model: "", cwd: "", items: [], status: "running", ...fields };
+}
+
+// A run that is still running when the stream closes never got its result event, so it failed.
+// If nothing arrived at all, a placeholder run carries the failure so it is still visible.
+function endStream(state: Trajectory, error?: string): Trajectory {
+  const failure = error
+    ? { kind: "request failed", message: error }
+    : { kind: "stream ended", message: "The event stream ended before the run's result event arrived." };
+  if (state.runs.length === 0) return { ...state, runs: [newRun(1, { status: "failed", failure })] };
+  const runs = state.runs.map((run) => (run.status === "running" ? { ...run, status: "failed" as const, failure } : run));
+  return { ...state, runs };
 }
 
 function applyEvent(state: Trajectory, ev: StreamEvent): Trajectory {
@@ -51,14 +72,23 @@ function applyEvent(state: Trajectory, ev: StreamEvent): Trajectory {
 
   // Each init event starts a new run (a resumed session prints a fresh init).
   if (isInit(ev)) {
-    const run: Run = { index: state.runs.length + 1, sessionId: ev.session_id, model: ev.model, cwd: ev.cwd, items: [] };
+    const run = newRun(state.runs.length + 1, { sessionId: ev.session_id, model: ev.model, cwd: ev.cwd });
     return { runs: [...state.runs, run], eventCount };
+  }
+
+  // The result event closes the current run: is_error decides finished vs failed.
+  if (isResult(ev) && state.runs.length > 0) {
+    const last = state.runs[state.runs.length - 1];
+    const ended: Run = ev.is_error
+      ? { ...last, status: "failed", failure: { kind: ev.subtype, message: ev.errors?.join("\n") || ev.subtype } }
+      : { ...last, status: "finished" };
+    return { runs: [...state.runs.slice(0, -1), ended], eventCount };
   }
 
   // Assistant events carry one content block each; text and tool_use become items, thinking is skipped.
   // Partial-message stream_events are ignored because the complete assistant event always follows them.
   if (isAssistant(ev)) {
-    const runs = state.runs.length > 0 ? state.runs : [{ index: 1, sessionId: "", model: "", cwd: "", items: [] }];
+    const runs = state.runs.length > 0 ? state.runs : [newRun(1)];
     const last = runs[runs.length - 1];
     const items = [...last.items];
     const parentId = ev.parent_tool_use_id ?? null;

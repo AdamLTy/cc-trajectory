@@ -18,7 +18,7 @@ const CATEGORIES: Record<string, string> = {
   Task: "agent",
 };
 
-export function ToolCall({ item, cwd }: { item: ToolItem; cwd: string }) {
+export function ToolCall({ item, cwd, runEnded }: { item: ToolItem; cwd: string; runEnded: boolean }) {
   const [open, setOpen] = useState(false);
   const category = CATEGORIES[item.name] ?? "other";
   const failed = item.result?.isError === true;
@@ -27,7 +27,7 @@ export function ToolCall({ item, cwd }: { item: ToolItem; cwd: string }) {
       <button className="tool-row" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span className={`badge badge-${category}`}>{item.name}</span>
         <span className="tool-summary">{summarize(item, cwd)}</span>
-        {failed && <span className="fail-mark">failed</span>}
+        <CallStatus item={item} runEnded={runEnded} />
         <span className="chevron" aria-hidden>
           {open ? "▾" : "▸"}
         </span>
@@ -35,6 +35,20 @@ export function ToolCall({ item, cwd }: { item: ToolItem; cwd: string }) {
       {open && <pre className="tool-input">{JSON.stringify(item.input, null, 2)}</pre>}
       {item.result && <ToolResultView result={item.result} />}
     </div>
+  );
+}
+
+// Pending from the moment the tool_use arrives until its tool_result attaches.
+// A call still without a result after its run ended will never get one, so it stops showing as pending.
+function CallStatus({ item, runEnded }: { item: ToolItem; runEnded: boolean }) {
+  if (item.result) {
+    return item.result.isError ? <span className="fail-mark">failed</span> : <span className="call-ok" aria-label="succeeded">✓</span>;
+  }
+  if (runEnded) return <span className="call-none">no result</span>;
+  return (
+    <span className="call-pending">
+      <span className="spinner" aria-hidden /> pending
+    </span>
   );
 }
 

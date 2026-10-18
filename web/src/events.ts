@@ -45,12 +45,20 @@ export interface UserEvent {
   parent_tool_use_id: string | null;
 }
 
+// Printed once when a run ends. is_error marks a failed run (e.g. subtype "error_max_turns").
+export interface ResultEvent {
+  type: "result";
+  subtype: string;
+  is_error: boolean;
+  errors?: string[];
+}
+
 export interface OtherEvent {
   type: string;
   subtype?: string;
 }
 
-export type StreamEvent = InitEvent | AssistantEvent | UserEvent | OtherEvent;
+export type StreamEvent = InitEvent | AssistantEvent | UserEvent | ResultEvent | OtherEvent;
 
 export function isInit(ev: StreamEvent): ev is InitEvent {
   return ev.type === "system" && ev.subtype === "init";
@@ -62,4 +70,8 @@ export function isAssistant(ev: StreamEvent): ev is AssistantEvent {
 
 export function isUser(ev: StreamEvent): ev is UserEvent {
   return ev.type === "user";
+}
+
+export function isResult(ev: StreamEvent): ev is ResultEvent {
+  return ev.type === "result";
 }
