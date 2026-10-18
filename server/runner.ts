@@ -34,9 +34,11 @@ export async function runClaude(req: RunRequest, onLine: (line: string) => void,
   if (req.sessionId) args.push("--resume", req.sessionId);
   if (req.model) args.push("--model", req.model);
 
-  // An exported API key would take precedence over the Claude login the course uses, and bill that key instead.
+  // The agent gets the server's environment, so it authenticates exactly like `claude` in your terminal.
+  // An exported ANTHROPIC_API_KEY takes precedence over a logged-in Claude account; set CC_IGNORE_API_KEY=1
+  // to drop it and always use the login instead.
   const env = { ...process.env };
-  delete env.ANTHROPIC_API_KEY;
+  if (process.env.CC_IGNORE_API_KEY === "1") delete env.ANTHROPIC_API_KEY;
 
   // stdin is closed: with a pipe, `claude -p` first waits a few seconds for piped input.
   const child = spawn("claude", args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });

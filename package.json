@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A web page that drives Claude Code and shows its trajectory live (CS2680 Assignment 1)",
+  "description": "Drive Claude Code from a web page and watch its trajectory live: tool calls, results, subagents, costs.",
   "scripts": {
     "dev": "tsx watch --clear-screen=false server/index.ts",
     "typecheck": "tsc --noEmit"
@@ -23,5 +23,6 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"
-  }
+  },
+  "license": "MIT"
 }
