@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { ToolItem } from "../trajectory.ts";
+import { useRef, useState, type ReactNode } from "react";
+import { isSpawner, type ToolItem } from "../trajectory.ts";
+import { SubagentReport } from "./SubagentReport.tsx";
 import { ToolResultView } from "./ToolResult.tsx";
+import { useJumpTarget } from "./useJumpTarget.ts";
 
 const CATEGORIES: Record<string, string> = {
   Read: "read",
@@ -38,17 +40,7 @@ export function ToolCall({ item, cwd, runEnded, focused, onFocused, children }: 
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const failed = item.result?.isError === true;
-
-  // Runs on mount too, so a call revealed by expanding a folded subagent group still gets scrolled to.
-  useEffect(() => {
-    const el = ref.current;
-    if (!focused || !el) return;
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
-    el.classList.remove("flash");
-    void el.offsetWidth; // restart the highlight animation when the same call is picked again
-    el.classList.add("flash");
-    onFocused?.();
-  }, [focused, onFocused]);
+  useJumpTarget(ref, focused, onFocused);
 
   return (
     <div ref={ref} id={`call-${item.id}`} className={failed ? "item tool tool-failed" : "item tool"}>
@@ -62,14 +54,14 @@ export function ToolCall({ item, cwd, runEnded, focused, onFocused, children }: 
       </button>
       {open && <pre className="tool-input">{JSON.stringify(item.input, null, 2)}</pre>}
       {children}
-      {item.result && <ToolResultView result={item.result} />}
+      {item.result && (isSpawner(item.name) ? <SubagentReport result={item.result} /> : <ToolResultView result={item.result} />)}
     </div>
   );
 }
 
 // Pending from the moment the tool_use arrives until its tool_result attaches.
 // A call still without a result after its run ended will never get one, so it stops showing as pending.
-function CallStatus({ item, runEnded }: { item: ToolItem; runEnded: boolean }) {
+export function CallStatus({ item, runEnded }: { item: ToolItem; runEnded: boolean }) {
   if (item.result) {
     return item.result.isError ? <span className="fail-mark">failed</span> : <span className="call-ok" aria-label="succeeded">✓</span>;
   }

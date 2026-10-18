@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import { groupByParent, type ChildMap, type Item, type ToolItem } from "../trajectory.ts";
+import { containsTarget, descendants, groupByParent, splitParallel, subagentDone, type ChildMap, type Item, type ToolItem } from "../trajectory.ts";
+import { ParallelGroup } from "./ParallelGroup.tsx";
 import { TextBlock } from "./TextBlock.tsx";
 import { ToolCall } from "./ToolCall.tsx";
 
-interface Context {
+export interface RenderContext {
   cwd: string;
   runEnded: boolean;
   children: ChildMap;
-  // The call the outline asked to jump to, until that call has scrolled itself into view.
+  // The item (targetOf) the outline asked to jump to, until it has scrolled itself into view.
   focus: string | null;
   onFocused: () => void;
 }
@@ -20,20 +21,23 @@ interface ItemListProps {
   onFocused: () => void;
 }
 
-// Renders a run's items as a tree: events a subagent emitted nest under the Agent/Task call that spawned it.
-// A run without subagents has only top-level items, so it renders as a flat list.
+// Renders a run's items as a tree: events a subagent emitted nest under the Agent/Task call that spawned it,
+// and subagents started together fork into side-by-side lanes. A run without subagents renders as a flat list.
 export function ItemList({ items, cwd, runEnded, focus, onFocused }: ItemListProps) {
-  const ctx: Context = { cwd, runEnded, children: groupByParent(items), focus, onFocused };
+  const ctx: RenderContext = { cwd, runEnded, children: groupByParent(items), focus, onFocused };
   return <Items list={ctx.children.get(null) ?? []} ctx={ctx} />;
 }
 
-function Items({ list, ctx }: { list: Item[]; ctx: Context }) {
+function Items({ list, ctx }: { list: Item[]; ctx: RenderContext }) {
   return (
     <>
-      {list.map((item) =>
-        item.kind === "text" ? (
-          <TextBlock key={item.key} text={item.text} />
-        ) : (
+      {splitParallel(list).map((unit) => {
+        if (unit.kind === "parallel") return <ParallelGroup key={unit.calls[0].key} calls={unit.calls} ctx={ctx} />;
+        const item = unit.item;
+        if (item.kind === "text") {
+          return <TextBlock key={item.key} text={item.text} focused={ctx.focus === item.key} onFocused={ctx.onFocused} />;
+        }
+        return (
           <ToolCall
             key={item.key}
             item={item}
@@ -44,24 +48,24 @@ function Items({ list, ctx }: { list: Item[]; ctx: Context }) {
           >
             {(item.subagent || ctx.children.has(item.id)) && <SubagentGroup call={item} ctx={ctx} />}
           </ToolCall>
-        ),
-      )}
+        );
+      })}
     </>
   );
 }
 
 // Open while the subagent works, folded once it is done, unless the reader has toggled it.
-function SubagentGroup({ call, ctx }: { call: ToolItem; ctx: Context }) {
+function SubagentGroup({ call, ctx }: { call: ToolItem; ctx: RenderContext }) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const done = isDone(call, ctx.runEnded);
+  const done = subagentDone(call, ctx.runEnded);
   const open = userOpen ?? !done;
-  const count = countEvents(call.id, ctx.children);
+  const count = descendants(call.id, ctx.children).length;
   const events = count === 1 ? "1 event" : `${count} events`;
   const status = call.subagent?.status;
 
   // A jump from the outline to a call inside this group unfolds it, so the call can be shown.
   useEffect(() => {
-    if (ctx.focus && containsCall(call.id, ctx.focus, ctx.children)) setUserOpen(true);
+    if (ctx.focus && containsTarget(call.id, ctx.focus, ctx.children)) setUserOpen(true);
   }, [ctx.focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -85,22 +89,5 @@ function SubagentGroup({ call, ctx }: { call: ToolItem; ctx: Context }) {
         </div>
       )}
     </div>
-  );
-}
-
-// The harness's task status is authoritative when present: a background subagent's tool_result
-// arrives at launch, long before it finishes. Without it, the call's result marks the end.
-function isDone(call: ToolItem, runEnded: boolean): boolean {
-  if (runEnded) return true;
-  return call.subagent ? call.subagent.status !== "running" : call.result !== undefined;
-}
-
-function countEvents(id: string, children: ChildMap): number {
-  return (children.get(id) ?? []).reduce((n, item) => n + 1 + (item.kind === "tool" ? countEvents(item.id, children) : 0), 0);
-}
-
-function containsCall(rootId: string, targetId: string, children: ChildMap): boolean {
-  return (children.get(rootId) ?? []).some(
-    (item) => item.kind === "tool" && (item.id === targetId || containsCall(item.id, targetId, children)),
   );
 }

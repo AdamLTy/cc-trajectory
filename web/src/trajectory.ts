@@ -3,6 +3,8 @@ import { isAssistant, isInit, isResult, isTask, isUser, type StreamEvent, type T
 export interface TextItem {
   kind: "text";
   key: string;
+  // Arrival order within the run, the time axis for parallel subagent lanes.
+  seq: number;
   text: string;
   parentId: string | null;
 }
@@ -10,10 +12,13 @@ export interface TextItem {
 export interface ToolItem {
   kind: "tool";
   key: string;
+  seq: number;
   id: string;
   name: string;
   input: Record<string, unknown>;
   parentId: string | null;
+  // The assistant message that requested the call; calls requested together in one message run in parallel.
+  messageId: string;
   result?: ToolResult;
   // Set on an Agent/Task call once the harness reports the subagent it spawned.
   subagent?: Subagent;
@@ -50,6 +55,61 @@ export function groupByParent(items: Item[]): ChildMap {
     else groups.set(parent, [item]);
   }
   return groups;
+}
+
+// Every event under a call (including deeper subagents), in arrival order.
+export function descendants(id: string, tree: ChildMap): Item[] {
+  const found: Item[] = [];
+  const walk = (parent: string) => {
+    for (const item of tree.get(parent) ?? []) {
+      found.push(item);
+      if (item.kind === "tool") walk(item.id);
+    }
+  };
+  walk(id);
+  return found.sort((a, b) => a.seq - b.seq);
+}
+
+// What the outline names when it asks the dialogue to jump to an item: a call's tool_use id, a text's key.
+export function targetOf(item: Item): string {
+  return item.kind === "tool" ? item.id : item.key;
+}
+
+export function containsTarget(rootId: string, target: string, tree: ChildMap): boolean {
+  return descendants(rootId, tree).some((item) => targetOf(item) === target);
+}
+
+// The harness's task status is authoritative when present: a background subagent's tool_result
+// arrives at launch, long before it finishes. Without it, the call's result marks the end.
+export function subagentDone(call: ToolItem, runEnded: boolean): boolean {
+  if (runEnded) return true;
+  return call.subagent ? call.subagent.status !== "running" : call.result !== undefined;
+}
+
+export type Unit = { kind: "item"; item: Item } | { kind: "parallel"; calls: ToolItem[] };
+
+const SPAWNERS = new Set(["Agent", "Task"]);
+
+// Tools that start a subagent (Claude Code renamed Task to Agent; both appear in recordings).
+export function isSpawner(name: string): boolean {
+  return SPAWNERS.has(name);
+}
+
+// Agent/Task calls requested in the same assistant message run at the same time: the model asked for all of
+// them at once and the harness started them together. Such a group becomes one unit, placed at its first call.
+export function splitParallel(siblings: Item[]): Unit[] {
+  const byMessage = new Map<string, ToolItem[]>();
+  for (const item of siblings) {
+    if (item.kind !== "tool" || !SPAWNERS.has(item.name)) continue;
+    byMessage.set(item.messageId, [...(byMessage.get(item.messageId) ?? []), item]);
+  }
+  const units: Unit[] = [];
+  for (const item of siblings) {
+    const group = item.kind === "tool" && SPAWNERS.has(item.name) ? byMessage.get(item.messageId) : undefined;
+    if (!group || group.length < 2) units.push({ kind: "item", item });
+    else if (group[0] === item) units.push({ kind: "parallel", calls: group });
+  }
+  return units;
 }
 
 export type RunStatus = "running" | "finished" | "failed";
@@ -141,12 +201,14 @@ function applyEvent(state: Trajectory, ev: StreamEvent): Trajectory {
     const last = runs[runs.length - 1];
     const items = [...last.items];
     const parentId = ev.parent_tool_use_id ?? null;
+    const messageId = ev.message.id;
     for (const block of ev.message.content) {
-      const key = `${last.index}:${items.length}`;
+      const seq = items.length;
+      const key = `${last.index}:${seq}`;
       if (block.type === "text" && block.text.trim()) {
-        items.push({ kind: "text", key, text: block.text, parentId });
+        items.push({ kind: "text", key, seq, text: block.text, parentId });
       } else if (block.type === "tool_use") {
-        items.push({ kind: "tool", key, id: block.id, name: block.name, input: block.input ?? {}, parentId });
+        items.push({ kind: "tool", key, seq, id: block.id, name: block.name, input: block.input ?? {}, parentId, messageId });
       }
     }
     return { runs: [...runs.slice(0, -1), { ...last, items }], eventCount };
