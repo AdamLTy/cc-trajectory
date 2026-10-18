@@ -1,19 +1,29 @@
-import { useState } from "react";
-import type { Item, ToolItem } from "../trajectory.ts";
+import { useEffect, useState } from "react";
+import { groupByParent, type ChildMap, type Item, type ToolItem } from "../trajectory.ts";
 import { TextBlock } from "./TextBlock.tsx";
 import { ToolCall } from "./ToolCall.tsx";
 
 interface Context {
   cwd: string;
   runEnded: boolean;
-  // Items keyed by the tool call that spawned them; null holds the main agent's items.
-  children: Map<string | null, Item[]>;
+  children: ChildMap;
+  // The call the outline asked to jump to, until that call has scrolled itself into view.
+  focus: string | null;
+  onFocused: () => void;
+}
+
+interface ItemListProps {
+  items: Item[];
+  cwd: string;
+  runEnded: boolean;
+  focus: string | null;
+  onFocused: () => void;
 }
 
 // Renders a run's items as a tree: events a subagent emitted nest under the Agent/Task call that spawned it.
 // A run without subagents has only top-level items, so it renders as a flat list.
-export function ItemList({ items, cwd, runEnded }: { items: Item[]; cwd: string; runEnded: boolean }) {
-  const ctx: Context = { cwd, runEnded, children: groupByParent(items) };
+export function ItemList({ items, cwd, runEnded, focus, onFocused }: ItemListProps) {
+  const ctx: Context = { cwd, runEnded, children: groupByParent(items), focus, onFocused };
   return <Items list={ctx.children.get(null) ?? []} ctx={ctx} />;
 }
 
@@ -24,7 +34,14 @@ function Items({ list, ctx }: { list: Item[]; ctx: Context }) {
         item.kind === "text" ? (
           <TextBlock key={item.key} text={item.text} />
         ) : (
-          <ToolCall key={item.key} item={item} cwd={ctx.cwd} runEnded={ctx.runEnded}>
+          <ToolCall
+            key={item.key}
+            item={item}
+            cwd={ctx.cwd}
+            runEnded={ctx.runEnded}
+            focused={ctx.focus === item.id}
+            onFocused={ctx.onFocused}
+          >
             {(item.subagent || ctx.children.has(item.id)) && <SubagentGroup call={item} ctx={ctx} />}
           </ToolCall>
         ),
@@ -41,6 +58,11 @@ function SubagentGroup({ call, ctx }: { call: ToolItem; ctx: Context }) {
   const count = countEvents(call.id, ctx.children);
   const events = count === 1 ? "1 event" : `${count} events`;
   const status = call.subagent?.status;
+
+  // A jump from the outline to a call inside this group unfolds it, so the call can be shown.
+  useEffect(() => {
+    if (ctx.focus && containsCall(call.id, ctx.focus, ctx.children)) setUserOpen(true);
+  }, [ctx.focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="subagent">
@@ -73,19 +95,12 @@ function isDone(call: ToolItem, runEnded: boolean): boolean {
   return call.subagent ? call.subagent.status !== "running" : call.result !== undefined;
 }
 
-function countEvents(id: string, children: Context["children"]): number {
+function countEvents(id: string, children: ChildMap): number {
   return (children.get(id) ?? []).reduce((n, item) => n + 1 + (item.kind === "tool" ? countEvents(item.id, children) : 0), 0);
 }
 
-function groupByParent(items: Item[]): Context["children"] {
-  const toolIds = new Set(items.flatMap((item) => (item.kind === "tool" ? [item.id] : [])));
-  const groups: Context["children"] = new Map();
-  for (const item of items) {
-    // An event whose spawning call is not in this run stays visible at the top level instead of being dropped.
-    const parent = item.parentId && toolIds.has(item.parentId) ? item.parentId : null;
-    const group = groups.get(parent);
-    if (group) group.push(item);
-    else groups.set(parent, [item]);
-  }
-  return groups;
+function containsCall(rootId: string, targetId: string, children: ChildMap): boolean {
+  return (children.get(rootId) ?? []).some(
+    (item) => item.kind === "tool" && (item.id === targetId || containsCall(item.id, targetId, children)),
+  );
 }

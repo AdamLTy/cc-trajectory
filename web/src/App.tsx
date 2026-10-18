@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { ItemList } from "./components/ItemList.tsx";
+import { Outline } from "./components/Outline.tsx";
 import { readNdjson } from "./ndjson.ts";
 import { emptyTrajectory, reducer, type Run, type RunStats, type RunStatus } from "./trajectory.ts";
 
@@ -22,7 +23,16 @@ export function App() {
   // The run the button plays next (1-based). Back at 1 once every run of the fixture has been played.
   const [nextRun, setNextRun] = useState(1);
   const totalRuns = fixtures.find((f) => f.name === fixture)?.runs ?? 1;
+  // The call an outline click asked to show; cleared once that call has scrolled itself into view.
+  const [focus, setFocus] = useState<string | null>(null);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const clearFocus = useCallback(() => setFocus(null), []);
   const nearBottom = useNearBottom();
+
+  function jump(id: string) {
+    setFocus(id);
+    setOutlineOpen(false);
+  }
 
   useEffect(() => {
     fetch("/api/fixtures")
@@ -86,26 +96,36 @@ export function App() {
         </div>
       </header>
 
-      <main className="runs">
-        {trajectory.runs.length === 0 ? (
-          <div className="card">
-            <p className="empty">Pick a recorded run and press Replay to stream it into the page.</p>
-          </div>
-        ) : (
-          trajectory.runs.map((run) => <RunView key={run.index} run={run} />)
-        )}
-        {!streaming && nextRun > 1 && trajectory.runs.length > 0 && (
-          <button className="next-run" onClick={replay}>
-            <span className="next-run-title">▶ Next run ({nextRun}/{totalRuns})</span>
-            <span className="next-run-hint">Click to replay the next run of this session</span>
-          </button>
-        )}
-      </main>
+      <div className="layout">
+        <main className="runs">
+          {trajectory.runs.length === 0 ? (
+            <div className="card">
+              <p className="empty">Pick a recorded run and press Replay to stream it into the page.</p>
+            </div>
+          ) : (
+            trajectory.runs.map((run) => <RunView key={run.index} run={run} focus={focus} onFocused={clearFocus} />)
+          )}
+          {!streaming && nextRun > 1 && trajectory.runs.length > 0 && (
+            <button className="next-run" onClick={replay}>
+              <span className="next-run-title">▶ Next run ({nextRun}/{totalRuns})</span>
+              <span className="next-run-hint">Click to replay the next run of this session</span>
+            </button>
+          )}
+        </main>
+        <aside className={outlineOpen ? "outline-pane open" : "outline-pane"}>
+          <Outline runs={trajectory.runs} onJump={jump} />
+        </aside>
+      </div>
+
+      {/* On a narrow window the outline folds away behind this button. */}
+      <button className="outline-toggle" onClick={() => setOutlineOpen((o) => !o)} aria-expanded={outlineOpen}>
+        {outlineOpen ? "✕ Close" : "☰ Outline"}
+      </button>
     </div>
   );
 }
 
-function RunView({ run }: { run: Run }) {
+function RunView({ run, focus, onFocused }: { run: Run; focus: string | null; onFocused: () => void }) {
   const ended = run.status !== "running";
   return (
     <section className="run card">
@@ -116,7 +136,7 @@ function RunView({ run }: { run: Run }) {
         <span className="run-line" />
         <RunStatusBadge status={run.status} />
       </div>
-      <ItemList items={run.items} cwd={run.cwd} runEnded={ended} />
+      <ItemList items={run.items} cwd={run.cwd} runEnded={ended} focus={focus} onFocused={onFocused} />
       {run.failure && (
         <div className="run-error">
           <strong>{run.failure.kind}</strong>

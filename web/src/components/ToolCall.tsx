@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ToolItem } from "../trajectory.ts";
 import { ToolResultView } from "./ToolResult.tsx";
 
@@ -18,16 +18,42 @@ const CATEGORIES: Record<string, string> = {
   Task: "agent",
 };
 
+export function toolCategory(name: string): string {
+  return CATEGORIES[name] ?? "other";
+}
+
+interface ToolCallProps {
+  item: ToolItem;
+  cwd: string;
+  runEnded: boolean;
+  // Set when the outline asked to jump to this call; the call scrolls itself into view and reports back.
+  focused?: boolean;
+  onFocused?: () => void;
+  children?: ReactNode;
+}
+
 // children (a subagent's nested events) render between the call and its result,
 // since the result of an Agent call is the report the subagent hands back.
-export function ToolCall({ item, cwd, runEnded, children }: { item: ToolItem; cwd: string; runEnded: boolean; children?: ReactNode }) {
+export function ToolCall({ item, cwd, runEnded, focused, onFocused, children }: ToolCallProps) {
   const [open, setOpen] = useState(false);
-  const category = CATEGORIES[item.name] ?? "other";
+  const ref = useRef<HTMLDivElement>(null);
   const failed = item.result?.isError === true;
+
+  // Runs on mount too, so a call revealed by expanding a folded subagent group still gets scrolled to.
+  useEffect(() => {
+    const el = ref.current;
+    if (!focused || !el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.classList.remove("flash");
+    void el.offsetWidth; // restart the highlight animation when the same call is picked again
+    el.classList.add("flash");
+    onFocused?.();
+  }, [focused, onFocused]);
+
   return (
-    <div className={failed ? "item tool tool-failed" : "item tool"}>
+    <div ref={ref} id={`call-${item.id}`} className={failed ? "item tool tool-failed" : "item tool"}>
       <button className="tool-row" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <span className={`badge badge-${category}`}>{item.name}</span>
+        <span className={`badge badge-${toolCategory(item.name)}`}>{item.name}</span>
         <span className="tool-summary">{summarize(item, cwd)}</span>
         <CallStatus item={item} runEnded={runEnded} />
         <span className="chevron" aria-hidden>
@@ -56,7 +82,7 @@ function CallStatus({ item, runEnded }: { item: ToolItem; runEnded: boolean }) {
 }
 
 // One line that says what the call is about, so the full input JSON can stay folded.
-function summarize({ name, input }: ToolItem, cwd: string): string {
+export function summarize({ name, input }: ToolItem, cwd: string): string {
   const str = (key: string) => (typeof input[key] === "string" ? (input[key] as string) : "");
   switch (name) {
     case "Bash":

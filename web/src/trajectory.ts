@@ -34,6 +34,24 @@ export interface ToolResult {
 
 export type Item = TextItem | ToolItem;
 
+// Items keyed by the tool call that spawned them; null holds the main agent's items.
+export type ChildMap = Map<string | null, Item[]>;
+
+// Groups a run's items under the Agent/Task call that spawned them (parent_tool_use_id), turning the flat
+// event list into a tree. A run without subagents ends up with only top-level items.
+export function groupByParent(items: Item[]): ChildMap {
+  const toolIds = new Set(items.flatMap((item) => (item.kind === "tool" ? [item.id] : [])));
+  const groups: ChildMap = new Map();
+  for (const item of items) {
+    // An event whose spawning call is not in this run stays visible at the top level instead of being dropped.
+    const parent = item.parentId && toolIds.has(item.parentId) ? item.parentId : null;
+    const group = groups.get(parent);
+    if (group) group.push(item);
+    else groups.set(parent, [item]);
+  }
+  return groups;
+}
+
 export type RunStatus = "running" | "finished" | "failed";
 
 export interface Run {

@@ -26,9 +26,75 @@ body {
 }
 
 .page {
-  max-width: 880px;
+  max-width: 1160px;
   margin: 0 auto;
   padding: 32px 16px 80px;
+}
+
+/* Dialogue on the left, outline beside it on the right. */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 24px;
+  align-items: start;
+}
+
+.outline-pane {
+  position: sticky;
+  top: 16px;
+}
+
+.outline-toggle {
+  display: none;
+}
+
+/* On a narrow window the outline folds away into a panel that slides in from the right. */
+@media (max-width: 1179px) {
+  .page {
+    max-width: 912px;
+  }
+
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .outline-pane {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    width: min(280px, 85vw);
+    padding: 12px;
+    background: var(--bg);
+    box-shadow: -8px 0 24px rgb(0 0 0 / 0.08);
+    transform: translateX(100%);
+    transition: transform 0.2s ease-out;
+  }
+
+  .outline-pane.open {
+    transform: none;
+  }
+
+  .outline-pane .outline {
+    max-height: 100%;
+  }
+
+  .outline-toggle {
+    display: block;
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 21;
+    padding: 9px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+    color: var(--text);
+    font: 600 13px var(--sans);
+    cursor: pointer;
+  }
 }
 
 .header {
@@ -425,6 +491,104 @@ button.primary:disabled {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Briefly highlights the call an outline click jumped to. */
+.tool.flash > .tool-row {
+  animation: flash 1.6s ease-out;
+}
+
+@keyframes flash {
+  0%,
+  35% {
+    background: #fdf1cc;
+    box-shadow: 0 0 0 2px #f0cd6a;
+  }
+}
+
+/* Outline: just the call names, nested like the dialogue */
+
+.outline {
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 12px 14px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.outline-title {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font: 600 11.5px var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.outline-empty {
+  margin: 0;
+  color: var(--muted);
+  font: italic 12px var(--sans);
+}
+
+.outline-run + .outline-run {
+  margin-top: 14px;
+}
+
+.outline-run-head {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  font: 650 11.5px var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.outline-run-running {
+  color: var(--live);
+}
+
+.outline-run-finished {
+  color: var(--ok);
+}
+
+.outline-run-failed {
+  color: var(--error);
+}
+
+.outline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outline-list .outline-list {
+  margin: 4px 0 2px 10px;
+  padding-left: 10px;
+  border-left: 2px solid #ddd0f3;
+}
+
+.outline-chip {
+  padding: 1px 9px;
+  border: 1.5px solid transparent;
+  border-radius: 999px;
+  font: 600 12px var(--sans);
+  cursor: pointer;
+}
+
+.outline-chip:hover {
+  filter: brightness(0.95);
+}
+
+.outline-chip-pending {
+  border-color: var(--live);
+}
+
+.outline-chip-failed {
+  border-color: var(--error);
 }
 
 /* Subagent events nested under the Agent/Task call that spawned them */
