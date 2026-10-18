@@ -95,6 +95,12 @@ export function App() {
         ) : (
           trajectory.runs.map((run) => <RunView key={run.index} run={run} />)
         )}
+        {!streaming && nextRun > 1 && trajectory.runs.length > 0 && (
+          <button className="next-run" onClick={replay}>
+            <span className="next-run-title">▶ Next run ({nextRun}/{totalRuns})</span>
+            <span className="next-run-hint">Click to replay the next run of this session</span>
+          </button>
+        )}
       </main>
     </div>
   );

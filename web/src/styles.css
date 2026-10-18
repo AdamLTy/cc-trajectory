@@ -161,6 +161,37 @@ button.primary:disabled {
   letter-spacing: 0.06em;
 }
 
+/* Shown under the last run while the fixture still has runs left to replay. */
+.next-run {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 14px 16px;
+  background: transparent;
+  border: 1.5px dashed #d9b3ae;
+  border-radius: 12px;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.next-run:hover {
+  background: #fbf1ef;
+  border-style: solid;
+}
+
+.next-run-title {
+  font-weight: 650;
+  font-size: 15px;
+}
+
+.next-run-hint {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
 /* Marks a run that continues the session of an earlier run. */
 .resumed {
   padding: 0 8px;
