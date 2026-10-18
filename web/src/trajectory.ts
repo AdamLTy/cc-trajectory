@@ -1,4 +1,4 @@
-import { isAssistant, isInit, isResult, isTask, isUser, type StreamEvent, type TaskEvent, type ToolResultContent } from "./events.ts";
+import { isAssistant, isInit, isResult, isServerError, isTask, isUser, type StreamEvent, type TaskEvent, type ToolResultContent } from "./events.ts";
 
 export interface TextItem {
   kind: "text";
@@ -127,6 +127,10 @@ export interface Run {
   // Who started the run when it was not a prompt, from result.origin (e.g. "task-notification").
   origin?: string;
   stats?: RunStats;
+  // The prompt typed for a live run (recordings do not contain it).
+  prompt?: string;
+  // A live run is shown as soon as it is requested; its init event fills in the session details.
+  awaitingInit?: boolean;
 }
 
 export interface RunStats {
@@ -144,11 +148,20 @@ export interface Trajectory {
 
 export const emptyTrajectory: Trajectory = { runs: [], eventCount: 0 };
 
+// "start" opens a live run when its prompt is sent (resumed: the request carries a session id to continue).
 // "end" is dispatched when the event stream closes, with an error if the request itself failed.
-export type Action = { type: "reset" } | { type: "event"; event: StreamEvent } | { type: "end"; error?: string };
+export type Action =
+  | { type: "reset" }
+  | { type: "start"; prompt: string; resumed: boolean }
+  | { type: "event"; event: StreamEvent }
+  | { type: "end"; error?: string };
 
 export function reducer(state: Trajectory, action: Action): Trajectory {
   if (action.type === "reset") return emptyTrajectory;
+  if (action.type === "start") {
+    const run = newRun(state.runs.length + 1, { prompt: action.prompt, resumed: action.resumed, awaitingInit: true });
+    return { ...state, runs: [...state.runs, run] };
+  }
   if (action.type === "end") return endStream(state, action.error);
   return applyEvent(state, action.event);
 }
@@ -159,23 +172,42 @@ function newRun(index: number, fields: Partial<Run> = {}): Run {
 
 // A run that is still running when the stream closes never got its result event, so it failed.
 // If nothing arrived at all, a placeholder run carries the failure so it is still visible.
+// A failure the server already reported is kept, since it says more than "the stream ended".
 function endStream(state: Trajectory, error?: string): Trajectory {
   const failure = error
     ? { kind: "request failed", message: error }
     : { kind: "stream ended", message: "The event stream ended before the run's result event arrived." };
   if (state.runs.length === 0) return { ...state, runs: [newRun(1, { status: "failed", failure })] };
-  const runs = state.runs.map((run) => (run.status === "running" ? { ...run, status: "failed" as const, failure } : run));
+  const runs = state.runs.map((run) =>
+    run.status === "running" ? { ...run, status: "failed" as const, failure: run.failure ?? failure, awaitingInit: false } : run,
+  );
   return { ...state, runs };
 }
 
 function applyEvent(state: Trajectory, ev: StreamEvent): Trajectory {
   const eventCount = state.eventCount + 1;
 
-  // Each init event starts a new run (a resumed session prints a fresh init).
+  // Each init event starts a new run (a resumed session prints a fresh init). A live run that is
+  // waiting for its init takes it instead; a second init in the same stream (the harness continuing
+  // after a background task) still opens a run of its own.
   if (isInit(ev)) {
-    const resumed = state.runs.some((r) => r.sessionId === ev.session_id);
-    const run = newRun(state.runs.length + 1, { sessionId: ev.session_id, model: ev.model, cwd: ev.cwd, resumed });
+    const last = state.runs.at(-1);
+    const seenSession = state.runs.some((r) => r.sessionId === ev.session_id);
+    const details = { sessionId: ev.session_id, model: ev.model, cwd: ev.cwd };
+    if (last?.awaitingInit) {
+      const filled: Run = { ...last, ...details, resumed: last.resumed || seenSession, awaitingInit: false };
+      return { runs: [...state.runs.slice(0, -1), filled], eventCount };
+    }
+    const run = newRun(state.runs.length + 1, { ...details, resumed: seenSession });
     return { runs: [...state.runs, run], eventCount };
+  }
+
+  // The server could not start the run (e.g. a bad working directory) or claude died before a result.
+  if (isServerError(ev)) {
+    const runs = state.runs.length > 0 ? state.runs : [newRun(1)];
+    const last = runs[runs.length - 1];
+    const failed: Run = { ...last, status: "failed", awaitingInit: false, failure: { kind: "error", message: ev.message ?? "unknown error" } };
+    return { runs: [...runs.slice(0, -1), failed], eventCount };
   }
 
   // The result event closes the current run: is_error decides finished vs failed.

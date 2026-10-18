@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { Composer, type Mode } from "./components/Composer.tsx";
 import { ItemList } from "./components/ItemList.tsx";
 import { Outline } from "./components/Outline.tsx";
 import { readNdjson } from "./ndjson.ts";
@@ -17,17 +18,25 @@ interface Fixture {
 
 export function App() {
   const [trajectory, dispatch] = useReducer(reducer, emptyTrajectory);
+  const [mode, setMode] = useState<Mode>("live");
+  const [busy, setBusy] = useState(false);
+  // Live mode: the directory the agent works in and the prompt being typed.
+  const [cwd, setCwd] = useState("");
+  const [prompt, setPrompt] = useState("");
+  // Replay mode.
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [fixture, setFixture] = useState("trace.jsonl");
   // The run the button plays next (1-based). Back at 1 once every run of the fixture has been played.
   const [nextRun, setNextRun] = useState(1);
   const totalRuns = fixtures.find((f) => f.name === fixture)?.runs ?? 1;
-  // The call an outline click asked to show; cleared once that call has scrolled itself into view.
+  // The item an outline click asked to show; cleared once it has scrolled itself into view.
   const [focus, setFocus] = useState<string | null>(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const clearFocus = useCallback(() => setFocus(null), []);
   const nearBottom = useNearBottom();
+  // A follow-up resumes the session of the latest run that reported one.
+  const sessionId = trajectory.runs.findLast((run) => run.sessionId)?.sessionId ?? null;
 
   function jump(id: string) {
     setFocus(id);
@@ -46,6 +55,46 @@ export function App() {
     if (nearBottom.current) window.scrollTo({ top: document.documentElement.scrollHeight });
   }, [trajectory, nearBottom]);
 
+  // Reads an NDJSON event stream into the trajectory; "end" then fails any run that never got its result.
+  async function consume(request: Promise<Response>) {
+    try {
+      const res = await request;
+      if (!res.ok || !res.body) throw new Error(`request failed (HTTP ${res.status}): ${await res.text()}`);
+      for await (const event of readNdjson(res.body)) dispatch({ type: "event", event });
+      dispatch({ type: "end" });
+      return null;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      dispatch({ type: "end", error: message });
+      return message;
+    }
+  }
+
+  function switchMode(next: Mode) {
+    setMode(next);
+    setNextRun(1);
+    setStatus({ kind: "idle" });
+    dispatch({ type: "reset" });
+  }
+
+  // Starts a live run. With a session already on the page the prompt is a follow-up that resumes it,
+  // so the agent keeps the context of the earlier runs.
+  async function runLive() {
+    const text = prompt.trim();
+    if (!text || !cwd.trim()) return;
+    nearBottom.current = true;
+    dispatch({ type: "start", prompt: text, resumed: sessionId !== null });
+    setPrompt("");
+    setBusy(true);
+    const body = { cwd, prompt: text, sessionId: sessionId ?? undefined };
+    await consume(fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    setBusy(false);
+  }
+
+  function newSession() {
+    dispatch({ type: "reset" });
+  }
+
   function chooseFixture(name: string) {
     setFixture(name);
     setNextRun(1);
@@ -58,60 +107,68 @@ export function App() {
   async function replay() {
     const run = nextRun;
     if (run === 1) dispatch({ type: "reset" });
+    nearBottom.current = true;
     setStatus({ kind: "streaming", run });
-    try {
-      const res = await fetch(`/api/replay?file=${encodeURIComponent(fixture)}&run=${run}`);
-      if (!res.ok || !res.body) throw new Error(`replay request failed (HTTP ${res.status})`);
-      for await (const event of readNdjson(res.body)) dispatch({ type: "event", event });
-      dispatch({ type: "end" });
-      setStatus({ kind: "done", run });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      dispatch({ type: "end", error: message });
-      setStatus({ kind: "error", run, message });
-    }
+    setBusy(true);
+    const error = await consume(fetch(`/api/replay?file=${encodeURIComponent(fixture)}&run=${run}`));
+    setStatus(error ? { kind: "error", run, message: error } : { kind: "done", run });
+    setBusy(false);
     setNextRun(run >= totalRuns ? 1 : run + 1);
   }
 
-  const streaming = status.kind === "streaming";
   return (
     <div className="page">
       <header className="header">
         <div>
           <h1>Claude Code Trajectory</h1>
-          <p className="subtitle">Replaying a recorded stream-json run, event by event.</p>
-        </div>
-        <div className="controls">
-          <StatusText status={status} totalRuns={totalRuns} />
-          <select className="fixture-select" value={fixture} onChange={(e) => chooseFixture(e.target.value)} disabled={streaming}>
-            {(fixtures.length > 0 ? fixtures.map((f) => f.name) : [fixture]).map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-          <button className="primary" onClick={replay} disabled={streaming}>
-            {nextRun === 1 ? "Replay" : `Continue · run ${nextRun}/${totalRuns}`}
-          </button>
+          <p className="subtitle">
+            {mode === "live"
+              ? "Drive Claude Code headless: pick a working directory, type a prompt, watch the agent work."
+              : "Replaying a recorded stream-json run, event by event."}
+          </p>
         </div>
       </header>
 
       <div className="layout">
-        <main className="runs">
-          {trajectory.runs.length === 0 ? (
-            <div className="card">
-              <p className="empty">Pick a recorded run and press Replay to stream it into the page.</p>
-            </div>
-          ) : (
-            trajectory.runs.map((run) => <RunView key={run.index} run={run} focus={focus} onFocused={clearFocus} />)
-          )}
-          {!streaming && nextRun > 1 && trajectory.runs.length > 0 && (
-            <button className="next-run" onClick={replay}>
-              <span className="next-run-title">▶ Next run ({nextRun}/{totalRuns})</span>
-              <span className="next-run-hint">Click to replay the next run of this session</span>
-            </button>
-          )}
-        </main>
+        <div className="main-col">
+          <main className="runs">
+            {trajectory.runs.length === 0 ? (
+              <div className="card">
+                <p className="empty">
+                  {mode === "live"
+                    ? "Choose a working directory, type a prompt below, and press Run."
+                    : "Pick a recorded run below and press Replay to stream it into the page."}
+                </p>
+              </div>
+            ) : (
+              trajectory.runs.map((run) => <RunView key={run.index} run={run} focus={focus} onFocused={clearFocus} />)
+            )}
+          </main>
+          <Composer
+            mode={mode}
+            onMode={switchMode}
+            busy={busy}
+            live={{
+              cwd,
+              onCwd: setCwd,
+              sessionId,
+              runCount: trajectory.runs.length,
+              prompt,
+              onPrompt: setPrompt,
+              onRun: runLive,
+              onNewSession: newSession,
+            }}
+            replay={{
+              fixtures: fixtures.map((f) => f.name),
+              fixture,
+              onFixture: chooseFixture,
+              nextRun,
+              totalRuns,
+              status: <StatusText status={status} totalRuns={totalRuns} />,
+              onReplay: replay,
+            }}
+          />
+        </div>
         <aside className={outlineOpen ? "outline-pane open" : "outline-pane"}>
           <Outline runs={trajectory.runs} onJump={jump} />
         </aside>
@@ -136,6 +193,12 @@ function RunView({ run, focus, onFocused }: { run: Run; focus: string | null; on
         <span className="run-line" />
         <RunStatusBadge status={run.status} />
       </div>
+      {run.prompt && (
+        <div className="you">
+          <span className="you-tag">You</span>
+          <span className="you-text">{run.prompt}</span>
+        </div>
+      )}
       <ItemList items={run.items} cwd={run.cwd} runEnded={ended} focus={focus} onFocused={onFocused} />
       {run.failure && (
         <div className="run-error">
@@ -205,20 +268,20 @@ function RunStatusBadge({ status }: { status: RunStatus }) {
 function StatusText({ status, totalRuns }: { status: Status; totalRuns: number }) {
   switch (status.kind) {
     case "idle":
-      return totalRuns > 1 ? <span className="status">{totalRuns} runs recorded</span> : null;
+      return totalRuns > 1 ? <>{totalRuns} runs recorded</> : null;
     case "streaming":
       return (
-        <span className="status status-live">
+        <span className="status-live">
           <span className="dot" /> streaming run {status.run}/{totalRuns}…
         </span>
       );
     case "done": {
       const left = totalRuns - status.run;
-      if (left > 0) return <span className="status">{left === 1 ? "1 run left" : `${left} runs left`}</span>;
-      return <span className="status">{totalRuns === 1 ? "run replayed" : `all ${totalRuns} runs replayed`}</span>;
+      if (left > 0) return <>{left === 1 ? "1 run left" : `${left} runs left`}</>;
+      return <>{totalRuns === 1 ? "run replayed" : `all ${totalRuns} runs replayed`}</>;
     }
     case "error":
-      return <span className="status status-error">{status.message}</span>;
+      return <span className="status-error">{status.message}</span>;
   }
 }
 

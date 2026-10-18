@@ -73,12 +73,20 @@ export interface TaskEvent {
   patch?: { status?: string };
 }
 
+// Added by our server around a live run: a run that could not start or died early, and the process exit.
+export interface ServerEvent {
+  type: "server";
+  subtype: "error" | "exit";
+  message?: string;
+  code?: number | null;
+}
+
 export interface OtherEvent {
   type: string;
   subtype?: string;
 }
 
-export type StreamEvent = InitEvent | AssistantEvent | UserEvent | ResultEvent | TaskEvent | OtherEvent;
+export type StreamEvent = InitEvent | AssistantEvent | UserEvent | ResultEvent | TaskEvent | ServerEvent | OtherEvent;
 
 export function isInit(ev: StreamEvent): ev is InitEvent {
   return ev.type === "system" && ev.subtype === "init";
@@ -94,6 +102,10 @@ export function isUser(ev: StreamEvent): ev is UserEvent {
 
 export function isResult(ev: StreamEvent): ev is ResultEvent {
   return ev.type === "result";
+}
+
+export function isServerError(ev: StreamEvent): ev is ServerEvent {
+  return ev.type === "server" && ev.subtype === "error";
 }
 
 export function isTask(ev: StreamEvent): ev is TaskEvent {
