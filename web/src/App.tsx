@@ -64,9 +64,11 @@ export function App() {
         </div>
       </header>
 
-      <main className="card">
+      <main className="runs">
         {trajectory.runs.length === 0 ? (
-          <p className="empty">Pick a recorded run and press Replay to stream it into the page.</p>
+          <div className="card">
+            <p className="empty">Pick a recorded run and press Replay to stream it into the page.</p>
+          </div>
         ) : (
           trajectory.runs.map((run) => <RunView key={run.index} run={run} />)
         )}
@@ -78,7 +80,7 @@ export function App() {
 function RunView({ run }: { run: Run }) {
   const ended = run.status !== "running";
   return (
-    <section className="run">
+    <section className="run card">
       <div className="run-divider">
         <span>Run {run.index}</span>
         {run.sessionId && <span className="mono">session {run.sessionId.slice(0, 8)}…</span>}

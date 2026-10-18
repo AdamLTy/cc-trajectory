@@ -137,11 +137,18 @@ button.primary:disabled {
 
 /* Runs */
 
+/* Each run is its own card, separated by a gap. */
+.runs {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
 .run-divider {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 18px 0 8px;
+  margin: 10px 0 8px;
   color: var(--muted);
   font-size: 12px;
   text-transform: none;
@@ -191,10 +198,6 @@ button.primary:disabled {
   border-radius: 8px;
   color: #8a1c12;
   font: 13px/1.5 var(--mono);
-}
-
-.run + .run {
-  margin-top: 10px;
 }
 
 /* Items appear with a short fade so a newly arrived event is noticeable. */
