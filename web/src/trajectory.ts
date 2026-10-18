@@ -38,6 +38,15 @@ export interface Run {
   resumed: boolean;
   // Who started the run when it was not a prompt, from result.origin (e.g. "task-notification").
   origin?: string;
+  stats?: RunStats;
+}
+
+export interface RunStats {
+  // This run's own cost; undefined when the previous run of a resumed session is not in view.
+  runCostUsd?: number;
+  sessionCostUsd: number;
+  durationMs: number;
+  numTurns: number;
 }
 
 export interface Trajectory {
@@ -83,7 +92,14 @@ function applyEvent(state: Trajectory, ev: StreamEvent): Trajectory {
 
   // The result event closes the current run: is_error decides finished vs failed.
   if (isResult(ev) && state.runs.length > 0) {
-    const last = { ...state.runs[state.runs.length - 1], origin: ev.origin?.kind };
+    const current = state.runs[state.runs.length - 1];
+    const stats: RunStats = {
+      runCostUsd: runCost(state.runs.slice(0, -1), current, ev.total_cost_usd),
+      sessionCostUsd: ev.total_cost_usd,
+      durationMs: ev.duration_ms,
+      numTurns: ev.num_turns,
+    };
+    const last = { ...current, origin: ev.origin?.kind, stats };
     const ended: Run = ev.is_error
       ? { ...last, status: "failed", failure: { kind: ev.subtype, message: ev.errors?.join("\n") || ev.subtype } }
       : { ...last, status: "finished" };
@@ -118,6 +134,14 @@ function applyEvent(state: Trajectory, ev: StreamEvent): Trajectory {
   }
 
   return { ...state, eventCount };
+}
+
+// total_cost_usd keeps counting across a session, so this run's share is the difference from the
+// previous run of the same session. The first run of a session starts from zero.
+function runCost(earlier: Run[], run: Run, sessionTotal: number): number | undefined {
+  const previous = earlier.findLast((r) => r.sessionId === run.sessionId && r.stats);
+  if (previous?.stats) return sessionTotal - previous.stats.sessionCostUsd;
+  return run.resumed ? undefined : sessionTotal;
 }
 
 // Searches the newest run first, since a result almost always answers a call from the current run.

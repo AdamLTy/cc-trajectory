@@ -51,6 +51,11 @@ export interface ResultEvent {
   subtype: string;
   is_error: boolean;
   errors?: string[];
+  // Cumulative across the whole session: a resumed run continues the total of the runs before it.
+  total_cost_usd: number;
+  // Wall-clock time and model calls of this run only.
+  duration_ms: number;
+  num_turns: number;
   // Set when the harness started this run itself, e.g. { kind: "task-notification" } after a background task finished.
   origin?: { kind: string } | null;
 }

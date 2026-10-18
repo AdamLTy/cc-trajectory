@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react"
 import { TextBlock } from "./components/TextBlock.tsx";
 import { ToolCall } from "./components/ToolCall.tsx";
 import { readNdjson } from "./ndjson.ts";
-import { emptyTrajectory, reducer, type Run, type RunStatus } from "./trajectory.ts";
+import { emptyTrajectory, reducer, type Run, type RunStats, type RunStatus } from "./trajectory.ts";
 
 type Status =
   | { kind: "idle" }
@@ -130,8 +130,36 @@ function RunView({ run }: { run: Run }) {
           {run.failure.message !== run.failure.kind && <span>{run.failure.message}</span>}
         </div>
       )}
+      {run.stats && <RunStatsLine stats={run.stats} sessionId={run.sessionId} />}
     </section>
   );
+}
+
+// The run's numbers from its result event: cost, wall-clock duration, and model turns.
+function RunStatsLine({ stats, sessionId }: { stats: RunStats; sessionId: string }) {
+  const session = `$${formatCost(stats.sessionCostUsd)}`;
+  const parts = [
+    stats.runCostUsd !== undefined ? `$${formatCost(stats.runCostUsd)}` : `session total ${session}`,
+    formatDuration(stats.durationMs),
+    stats.numTurns === 1 ? "1 turn" : `${stats.numTurns} turns`,
+  ];
+  if (sessionId) parts.push(`session ${sessionId.slice(0, 8)}…`);
+  return (
+    <div className="run-stats">
+      <span>{parts.join(" · ")}</span>
+      {stats.runCostUsd !== undefined && <span className="run-stats-total">(session total {session})</span>}
+    </div>
+  );
+}
+
+function formatCost(usd: number): string {
+  return usd < 1 ? usd.toFixed(4) : usd.toFixed(2);
+}
+
+function formatDuration(ms: number): string {
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)} s`;
+  return `${Math.floor(seconds / 60)} m ${Math.round(seconds % 60)} s`;
 }
 
 // A run that shares its session id with an earlier one continues that conversation. Usually that is a resumed

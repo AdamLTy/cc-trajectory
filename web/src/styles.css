@@ -161,6 +161,22 @@ button.primary:disabled {
   letter-spacing: 0.06em;
 }
 
+/* Cost, duration and turns from the run's result event. */
+.run-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font: 12.5px var(--mono);
+}
+
+.run-stats-total {
+  color: #a3a6ab;
+}
+
 /* Shown under the last run while the fixture still has runs left to replay. */
 .next-run {
   display: flex;
