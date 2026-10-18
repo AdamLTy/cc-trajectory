@@ -1,7 +1,9 @@
 import { useRef, useState, type ReactNode } from "react";
 import { isSpawner, type ToolItem } from "../trajectory.ts";
+import { formatElapsed, useNow } from "../useNow.ts";
+import { DiffView, diffStats, editHunks } from "./DiffView.tsx";
 import { SubagentReport } from "./SubagentReport.tsx";
-import { ToolResultView } from "./ToolResult.tsx";
+import { looksFailed, ToolResultView } from "./ToolResult.tsx";
 import { useJumpTarget } from "./useJumpTarget.ts";
 
 const CATEGORIES: Record<string, string> = {
@@ -36,39 +38,71 @@ interface ToolCallProps {
 
 // children (a subagent's nested events) render between the call and its result,
 // since the result of an Agent call is the report the subagent hands back.
+// Edits show their change as a diff right under the call; the raw input stays one click away.
 export function ToolCall({ item, cwd, runEnded, focused, onFocused, children }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const failed = item.result?.isError === true;
+  const hunks = editHunks(item.name, item.input);
   useJumpTarget(ref, focused, onFocused);
 
   return (
-    <div ref={ref} id={`call-${item.id}`} className={failed ? "item tool tool-failed" : "item tool"}>
+    <div ref={ref} id={`call-${item.id}`} data-target={item.id} className={failed ? "item tool tool-failed" : "item tool"}>
       <button className="tool-row" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span className={`badge badge-${toolCategory(item.name)}`}>{item.name}</span>
         <span className="tool-summary">{summarize(item, cwd)}</span>
+        {hunks && <DiffStat hunks={hunks} />}
         <CallStatus item={item} runEnded={runEnded} />
         <span className="chevron" aria-hidden>
           {open ? "▾" : "▸"}
         </span>
       </button>
       {open && <pre className="tool-input">{JSON.stringify(item.input, null, 2)}</pre>}
+      {hunks && <DiffView hunks={hunks} />}
       {children}
-      {item.result && (isSpawner(item.name) ? <SubagentReport result={item.result} /> : <ToolResultView result={item.result} />)}
+      {item.result && <CallResult item={item} />}
     </div>
   );
 }
 
-// Pending from the moment the tool_use arrives until its tool_result attaches.
+// An Agent call's result is the subagent's report. A failed command keeps its end in view, where the error is;
+// that includes command output that reports a failure while the command itself exits 0 (`pytest | tail`).
+export function CallResult({ item, compact }: { item: ToolItem; compact?: boolean }) {
+  if (!item.result) return null;
+  if (isSpawner(item.name)) return <SubagentReport result={item.result} compact={compact} />;
+  const isBash = item.name === "Bash";
+  const tail = item.result.isError || (isBash && looksFailed(item.result.text));
+  const limits = compact ? { foldedLines: 6, foldedLineChars: 90 } : {};
+  return <ToolResultView result={item.result} tail={tail} highlight={isBash} {...limits} />;
+}
+
+function DiffStat({ hunks }: { hunks: NonNullable<ReturnType<typeof editHunks>> }) {
+  const { added, removed } = diffStats(hunks);
+  return (
+    <span className="diff-stat">
+      <span className="diff-stat-add">+{added}</span> <span className="diff-stat-del">−{removed}</span>
+    </span>
+  );
+}
+
+// Pending from the moment the tool_use arrives until its tool_result attaches, with a live timer.
 // A call still without a result after its run ended will never get one, so it stops showing as pending.
+// A finished call shows how long the tool took, once that is long enough to matter.
 export function CallStatus({ item, runEnded }: { item: ToolItem; runEnded: boolean }) {
+  const now = useNow();
   if (item.result) {
-    return item.result.isError ? <span className="fail-mark">failed</span> : <span className="call-ok" aria-label="succeeded">✓</span>;
+    const took = item.endedAt !== undefined ? item.endedAt - item.startedAt : 0;
+    return (
+      <span className="call-done">
+        {took >= 100 && <span className="call-took">{formatElapsed(took)}</span>}
+        {item.result.isError ? <span className="fail-mark">failed</span> : <span className="call-ok" aria-label="succeeded">✓</span>}
+      </span>
+    );
   }
   if (runEnded) return <span className="call-none">no result</span>;
   return (
     <span className="call-pending">
-      <span className="spinner" aria-hidden /> pending
+      <span className="spinner" aria-hidden /> pending · {formatElapsed(now - item.startedAt)}
     </span>
   );
 }

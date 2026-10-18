@@ -274,11 +274,14 @@ button.primary:disabled {
   flex: 1;
 }
 
-.composer {
+.composer-dock {
   position: sticky;
   bottom: 0;
   z-index: 10;
   margin-top: 18px;
+}
+
+.composer {
   padding: 12px 14px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -287,7 +290,7 @@ button.primary:disabled {
 }
 
 /* Keeps a strip of page background under the bar so the last run never shows through below it. */
-.composer::after {
+.composer-dock::after {
   content: "";
   position: absolute;
   left: -1px;
@@ -295,6 +298,64 @@ button.primary:disabled {
   top: 100%;
   height: 16px;
   background: var(--bg);
+}
+
+/* Appears above the composer while a run streams and the reader has scrolled away from the newest events. */
+.latest {
+  position: absolute;
+  top: -44px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  background: var(--text);
+  border: 0;
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+  color: #fff;
+  font: 600 12.5px var(--sans);
+  cursor: pointer;
+}
+
+button.stop {
+  padding: 9px 18px;
+  background: var(--surface);
+  border: 1.5px solid var(--error);
+  border-radius: 8px;
+  color: var(--error);
+  font: 700 14px var(--sans);
+  cursor: pointer;
+}
+
+button.stop:hover {
+  background: #fdecea;
+}
+
+a.secondary {
+  text-decoration: none;
+}
+
+/* What the agent is doing between visible steps: starting, thinking, waiting for the model. */
+.activity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 2px;
+  color: var(--live);
+  font: italic 12.5px var(--sans);
+}
+
+/* A blinking caret at the end of text that is still streaming in. */
+.text-block.streaming .md > :last-child::after {
+  content: "▍";
+  margin-left: 1px;
+  color: var(--accent);
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .composer-row {
@@ -386,7 +447,8 @@ button.primary:disabled {
   outline-offset: -1px;
 }
 
-button.secondary {
+button.secondary,
+a.secondary {
   padding: 7px 12px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -552,6 +614,89 @@ button.secondary:disabled {
   color: #fff;
   font-size: 10px;
   letter-spacing: 0;
+}
+
+.call-done {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* How long a finished tool took. */
+.call-took {
+  color: #a3a6ab;
+  font: 11.5px var(--mono);
+}
+
+/* "+3 −1" on an editing call's row. */
+.diff-stat {
+  flex: none;
+  font: 600 11.5px var(--mono);
+}
+
+.diff-stat-add {
+  color: var(--ok);
+}
+
+.diff-stat-del {
+  color: var(--error);
+}
+
+.diff {
+  margin: 0 0 6px 62px;
+  padding: 6px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.diff pre {
+  margin: 0;
+  font: 12.5px/1.55 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff pre > span {
+  display: block;
+  padding: 0 12px 0 8px;
+}
+
+.diff-sign {
+  display: inline-block;
+  width: 16px;
+  color: var(--muted);
+  user-select: none;
+}
+
+.diff-add {
+  background: #e9f6ec;
+  color: #14532d;
+}
+
+.diff-del {
+  background: #fdeceb;
+  color: #8a1c12;
+}
+
+.diff-ctx {
+  color: var(--muted);
+}
+
+.diff .fold-toggle {
+  margin: 4px 12px 0;
+}
+
+/* Lines in command output that say what failed, and the test summary line. */
+.line-failure {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.line-summary {
+  font-weight: 700;
 }
 
 .call-ok {
@@ -927,11 +1072,13 @@ button.secondary:disabled {
 }
 
 /* Text steps: a small "text" tag plus a one-line preview. */
+/* The whole row is the click target, not just the small tag. */
 .outline-text {
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: 100%;
+  width: 100%;
+  min-height: 22px;
   padding: 0;
   background: none;
   border: 0;
@@ -1031,8 +1178,27 @@ button.secondary:disabled {
   white-space: nowrap;
 }
 
+/* The step the reader is looking at in the dialogue. */
+.outline-current {
+  box-shadow: 0 0 0 2px var(--text);
+}
+
+.outline-text.outline-current {
+  box-shadow: none;
+}
+
+.outline-text.outline-current .outline-text-tag {
+  border-color: var(--text);
+  color: var(--text);
+}
+
+.outline-text.outline-current .outline-text-preview {
+  color: var(--text);
+}
+
 .outline-chip {
-  padding: 1px 9px;
+  min-height: 22px;
+  padding: 2px 10px;
   border: 1.5px solid transparent;
   border-radius: 999px;
   font: 600 12px var(--sans);
@@ -1276,7 +1442,8 @@ button.secondary:disabled {
     padding: 4px 14px 14px;
   }
   .tool-input,
-  .tool-result {
+  .tool-result,
+  .diff {
     margin-left: 0;
   }
 }

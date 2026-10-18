@@ -35,7 +35,16 @@ function Items({ list, ctx }: { list: Item[]; ctx: RenderContext }) {
         if (unit.kind === "parallel") return <ParallelGroup key={unit.calls[0].key} calls={unit.calls} ctx={ctx} />;
         const item = unit.item;
         if (item.kind === "text") {
-          return <TextBlock key={item.key} text={item.text} focused={ctx.focus === item.key} onFocused={ctx.onFocused} />;
+          return (
+            <TextBlock
+              key={item.key}
+              text={item.text}
+              target={item.key}
+              streaming={item.streaming}
+              focused={ctx.focus === item.key}
+              onFocused={ctx.onFocused}
+            />
+          );
         }
         return (
           <ToolCall

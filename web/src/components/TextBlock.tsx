@@ -5,16 +5,20 @@ import { useJumpTarget } from "./useJumpTarget.ts";
 
 interface TextBlockProps {
   text: string;
+  // The item's jump target, so the outline can follow and highlight where the reader is.
+  target?: string;
+  // Still arriving piece by piece: shows a blinking caret at the end.
+  streaming?: boolean;
   // Set when the outline asked to jump to this text.
   focused?: boolean;
   onFocused?: () => void;
 }
 
-export function TextBlock({ text, focused, onFocused }: TextBlockProps) {
+export function TextBlock({ text, target, streaming, focused, onFocused }: TextBlockProps) {
   const ref = useRef<HTMLDivElement>(null);
   useJumpTarget(ref, focused, onFocused);
   return (
-    <div ref={ref} className="item text-block">
+    <div ref={ref} data-target={target} className={streaming ? "item text-block streaming" : "item text-block"}>
       <span className="text-label">text</span>
       <MarkdownBody text={text} />
     </div>

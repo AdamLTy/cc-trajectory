@@ -29,7 +29,8 @@ export async function runClaude(req: RunRequest, onLine: (line: string) => void,
     return;
   }
 
-  const args = ["-p", req.prompt, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"];
+  // Partial messages let the page show text as the model writes it, ahead of each complete assistant event.
+  const args = ["-p", req.prompt, "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--dangerously-skip-permissions"];
   if (req.sessionId) args.push("--resume", req.sessionId);
   if (req.model) args.push("--model", req.model);
 

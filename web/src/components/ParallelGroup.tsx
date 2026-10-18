@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { containsTarget, descendants, subagentDone, targetOf, type Item, type ToolItem } from "../trajectory.ts";
+import { DiffView, editHunks } from "./DiffView.tsx";
 import type { RenderContext } from "./ItemList.tsx";
 import { SubagentReport } from "./SubagentReport.tsx";
 import { plainPreview, TextBlock } from "./TextBlock.tsx";
-import { CallStatus, summarize, toolCategory } from "./ToolCall.tsx";
-import { ToolResultView } from "./ToolResult.tsx";
+import { CallResult, CallStatus, summarize, toolCategory } from "./ToolCall.tsx";
 import { useJumpTarget } from "./useJumpTarget.ts";
 
 // Subagents started in the same assistant message fork into side-by-side lanes, one per subagent.
@@ -83,7 +83,13 @@ function LaneHead({ call, lane, ctx }: { call: ToolItem; lane: number; ctx: Rend
   useJumpTarget(ref, ctx.focus === call.id, ctx.onFocused);
   const done = subagentDone(call, ctx.runEnded);
   return (
-    <div ref={ref} id={`call-${call.id}`} className={`lane-head lane-${lane % 4}`} style={{ gridColumn: lane + 1, gridRow: 1 }}>
+    <div
+      ref={ref}
+      id={`call-${call.id}`}
+      data-target={call.id}
+      className={`lane-head lane-${lane % 4}`}
+      style={{ gridColumn: lane + 1, gridRow: 1 }}
+    >
       <div className="lane-title">
         <span className="badge badge-agent">{call.name}</span>
         <span className="lane-desc">{summarize(call, ctx.cwd)}</span>
@@ -112,19 +118,20 @@ function LaneCell({ item, ctx }: { item: Item; ctx: RenderContext }) {
 
   if (item.kind === "text") {
     return (
-      <div ref={ref} className="lane-cell">
+      <div ref={ref} data-target={item.key} className="lane-cell">
         <button className="lane-row" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
           <span className="lane-text-tag">text</span>
           <span className="lane-summary">{plainPreview(item.text)}</span>
         </button>
-        {open && <TextBlock text={item.text} />}
+        {open && <TextBlock text={item.text} streaming={item.streaming} />}
       </div>
     );
   }
 
   const failed = item.result?.isError === true;
+  const hunks = editHunks(item.name, item.input);
   return (
-    <div ref={ref} id={`call-${item.id}`} className={failed ? "lane-cell tool-failed" : "lane-cell"}>
+    <div ref={ref} id={`call-${item.id}`} data-target={item.id} className={failed ? "lane-cell tool-failed" : "lane-cell"}>
       <button className="lane-row" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span className={`badge badge-${toolCategory(item.name)}`}>{item.name}</span>
         <span className="lane-summary">{summarize(item, ctx.cwd)}</span>
@@ -132,8 +139,8 @@ function LaneCell({ item, ctx }: { item: Item; ctx: RenderContext }) {
       </button>
       {open && (
         <div className="lane-detail">
-          <pre className="tool-input">{JSON.stringify(item.input, null, 2)}</pre>
-          {item.result && <ToolResultView result={item.result} foldedLines={6} foldedLineChars={90} />}
+          {hunks ? <DiffView hunks={hunks} /> : <pre className="tool-input">{JSON.stringify(item.input, null, 2)}</pre>}
+          <CallResult item={item} compact />
         </div>
       )}
     </div>

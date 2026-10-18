@@ -73,12 +73,36 @@ export interface TaskEvent {
   patch?: { status?: string };
 }
 
-// Added by our server around a live run: a run that could not start or died early, and the process exit.
+// Added by our server around a live run: a run that could not start or died early, the process exit, and
+// (in recordings only) the prompt that started each run, since Claude Code's stream does not contain it.
 export interface ServerEvent {
   type: "server";
-  subtype: "error" | "exit";
+  subtype: "error" | "exit" | "prompt";
   message?: string;
   code?: number | null;
+  prompt?: string;
+  resumed?: boolean;
+}
+
+// With --include-partial-messages the model's output also arrives piece by piece, ahead of the complete
+// assistant event. Every piece names the API message it belongs to.
+export interface PartialEvent {
+  type: "stream_event";
+  event: {
+    type: string;
+    index?: number;
+    content_block?: { type: string };
+    delta?: { type: string; text?: string };
+  };
+  parent_tool_use_id: string | null;
+  api_message_id?: string;
+}
+
+// The harness's running estimate of how many thinking tokens the model has produced so far.
+export interface ThinkingEvent {
+  type: "system";
+  subtype: "thinking_tokens";
+  estimated_tokens: number;
 }
 
 export interface OtherEvent {
@@ -86,7 +110,16 @@ export interface OtherEvent {
   subtype?: string;
 }
 
-export type StreamEvent = InitEvent | AssistantEvent | UserEvent | ResultEvent | TaskEvent | ServerEvent | OtherEvent;
+export type StreamEvent =
+  | InitEvent
+  | AssistantEvent
+  | UserEvent
+  | ResultEvent
+  | TaskEvent
+  | ServerEvent
+  | PartialEvent
+  | ThinkingEvent
+  | OtherEvent;
 
 export function isInit(ev: StreamEvent): ev is InitEvent {
   return ev.type === "system" && ev.subtype === "init";
@@ -106,6 +139,18 @@ export function isResult(ev: StreamEvent): ev is ResultEvent {
 
 export function isServerError(ev: StreamEvent): ev is ServerEvent {
   return ev.type === "server" && ev.subtype === "error";
+}
+
+export function isServerPrompt(ev: StreamEvent): ev is ServerEvent {
+  return ev.type === "server" && ev.subtype === "prompt";
+}
+
+export function isPartial(ev: StreamEvent): ev is PartialEvent {
+  return ev.type === "stream_event";
+}
+
+export function isThinking(ev: StreamEvent): ev is ThinkingEvent {
+  return ev.type === "system" && ev.subtype === "thinking_tokens";
 }
 
 export function isTask(ev: StreamEvent): ev is TaskEvent {

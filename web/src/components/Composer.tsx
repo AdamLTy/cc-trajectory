@@ -12,10 +12,18 @@ export interface LiveProps {
   onPrompt: (prompt: string) => void;
   onRun: () => void;
   onNewSession: () => void;
+  // Shown while a saved session is being restored after a reload.
+  restoring: boolean;
+}
+
+export interface FixtureOption {
+  name: string;
+  // fixtures/ holds hand-picked recordings; recordings/ fills up with live runs.
+  group: "fixtures" | "recordings";
 }
 
 export interface ReplayProps {
-  fixtures: string[];
+  fixtures: FixtureOption[];
   fixture: string;
   onFixture: (name: string) => void;
   // The run the button plays next (1-based) and how many the fixture has.
@@ -29,12 +37,14 @@ interface ComposerProps {
   mode: Mode;
   onMode: (mode: Mode) => void;
   busy: boolean;
+  onStop: () => void;
   live: LiveProps;
   replay: ReplayProps;
 }
 
 // The bar pinned to the bottom of the dialogue: the mode switch plus the controls of the current mode.
-export function Composer({ mode, onMode, busy, live, replay }: ComposerProps) {
+// While anything runs, the mode's main button turns into Stop.
+export function Composer({ mode, onMode, busy, onStop, live, replay }: ComposerProps) {
   return (
     <div className="composer">
       <div className="composer-row">
@@ -45,14 +55,22 @@ export function Composer({ mode, onMode, busy, live, replay }: ComposerProps) {
             </button>
           ))}
         </div>
-        {mode === "live" ? <LiveHeader {...live} busy={busy} /> : <ReplayRow {...replay} busy={busy} />}
+        {mode === "live" ? <LiveHeader {...live} busy={busy} /> : <ReplayRow {...replay} busy={busy} onStop={onStop} />}
       </div>
-      {mode === "live" && <PromptRow {...live} busy={busy} />}
+      {mode === "live" && <PromptRow {...live} busy={busy} onStop={onStop} />}
     </div>
   );
 }
 
-function LiveHeader({ cwd, onCwd, sessionId, runCount, onNewSession, busy }: LiveProps & { busy: boolean }) {
+function StopButton({ onStop }: { onStop: () => void }) {
+  return (
+    <button className="stop" onClick={onStop} title="Stop the run (the agent process is ended)">
+      ■ Stop
+    </button>
+  );
+}
+
+function LiveHeader({ cwd, onCwd, sessionId, runCount, onNewSession, restoring, busy }: LiveProps & { busy: boolean }) {
   const locked = sessionId !== null;
   return (
     <>
@@ -68,7 +86,9 @@ function LiveHeader({ cwd, onCwd, sessionId, runCount, onNewSession, busy }: Liv
         />
       </label>
       <span className="status composer-status">
-        {busy ? (
+        {restoring ? (
+          "restoring session…"
+        ) : busy ? (
           <span className="status-live">
             <span className="dot" /> running…
           </span>
@@ -78,6 +98,11 @@ function LiveHeader({ cwd, onCwd, sessionId, runCount, onNewSession, busy }: Liv
           "new session"
         )}
       </span>
+      {sessionId && !busy && (
+        <a className="secondary" href={`/api/recordings/${sessionId}?download=1`} title="Download this session's events as stream-json lines">
+          ⬇ jsonl
+        </a>
+      )}
       <button className="secondary" onClick={onNewSession} disabled={busy || runCount === 0}>
         New session
       </button>
@@ -85,7 +110,7 @@ function LiveHeader({ cwd, onCwd, sessionId, runCount, onNewSession, busy }: Liv
   );
 }
 
-function PromptRow({ prompt, onPrompt, onRun, cwd, sessionId, busy }: LiveProps & { busy: boolean }) {
+function PromptRow({ prompt, onPrompt, onRun, cwd, sessionId, busy, onStop }: LiveProps & { busy: boolean; onStop: () => void }) {
   const ready = !busy && prompt.trim() !== "" && cwd.trim() !== "";
   // Enter sends, Shift+Enter adds a line; Enter that confirms an IME composition (e.g. Chinese input) does not send.
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -104,27 +129,44 @@ function PromptRow({ prompt, onPrompt, onRun, cwd, sessionId, busy }: LiveProps 
         rows={2}
         disabled={busy}
       />
-      <button className="primary" onClick={onRun} disabled={!ready}>
-        Run
-      </button>
+      {busy ? (
+        <StopButton onStop={onStop} />
+      ) : (
+        <button className="primary" onClick={onRun} disabled={!ready}>
+          Run
+        </button>
+      )}
     </div>
   );
 }
 
-function ReplayRow({ fixtures, fixture, onFixture, nextRun, totalRuns, status, onReplay, busy }: ReplayProps & { busy: boolean }) {
+function ReplayRow({ fixtures, fixture, onFixture, nextRun, totalRuns, status, onReplay, busy, onStop }: ReplayProps & { busy: boolean; onStop: () => void }) {
+  const groups = (["fixtures", "recordings"] as const).map((group) => ({ group, names: fixtures.filter((f) => f.group === group).map((f) => f.name) }));
   return (
     <>
       <select className="fixture-select" value={fixture} onChange={(e) => onFixture(e.target.value)} disabled={busy}>
-        {(fixtures.length > 0 ? fixtures : [fixture]).map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
+        {fixtures.length === 0 && <option value={fixture}>{fixture}</option>}
+        {groups.map(
+          ({ group, names }) =>
+            names.length > 0 && (
+              <optgroup key={group} label={group}>
+                {names.map((name) => (
+                  <option key={name} value={name}>
+                    {name.replace(/^recordings\//, "")}
+                  </option>
+                ))}
+              </optgroup>
+            ),
+        )}
       </select>
       <span className="status composer-status">{status}</span>
-      <button className="primary" onClick={onReplay} disabled={busy}>
-        {nextRun === 1 ? "Replay" : `▶ Next run (${nextRun}/${totalRuns})`}
-      </button>
+      {busy ? (
+        <StopButton onStop={onStop} />
+      ) : (
+        <button className="primary" onClick={onReplay}>
+          {nextRun === 1 ? "Replay" : `▶ Next run (${nextRun}/${totalRuns})`}
+        </button>
+      )}
     </>
   );
 }

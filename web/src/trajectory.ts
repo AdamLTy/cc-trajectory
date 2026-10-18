@@ -1,4 +1,17 @@
-import { isAssistant, isInit, isResult, isServerError, isTask, isUser, type StreamEvent, type TaskEvent, type ToolResultContent } from "./events.ts";
+import {
+  isAssistant,
+  isInit,
+  isPartial,
+  isResult,
+  isServerError,
+  isServerPrompt,
+  isTask,
+  isThinking,
+  isUser,
+  type StreamEvent,
+  type TaskEvent,
+  type ToolResultContent,
+} from "./events.ts";
 
 export interface TextItem {
   kind: "text";
@@ -7,6 +20,10 @@ export interface TextItem {
   seq: number;
   text: string;
   parentId: string | null;
+  // Text still arriving piece by piece (partial messages); the complete assistant event finalizes it.
+  streaming?: boolean;
+  messageId?: string;
+  blockIndex?: number;
 }
 
 export interface ToolItem {
@@ -19,6 +36,9 @@ export interface ToolItem {
   parentId: string | null;
   // The assistant message that requested the call; calls requested together in one message run in parallel.
   messageId: string;
+  // When the tool_use and its tool_result arrived (ms), for the per-call timers.
+  startedAt: number;
+  endedAt?: number;
   result?: ToolResult;
   // Set on an Agent/Task call once the harness reports the subagent it spawned.
   subagent?: Subagent;
@@ -127,10 +147,22 @@ export interface Run {
   // Who started the run when it was not a prompt, from result.origin (e.g. "task-notification").
   origin?: string;
   stats?: RunStats;
-  // The prompt typed for a live run (recordings do not contain it).
+  // The prompt typed for a live run (Claude Code's stream does not contain it).
   prompt?: string;
   // A live run is shown as soon as it is requested; its init event fills in the session details.
   awaitingInit?: boolean;
+  // When the run was requested and when it ended (ms), for the live run timer.
+  startedAt: number;
+  endedAt?: number;
+  // What the model has been doing since its last visible output, for the "thinking…" line.
+  activity: Activity;
+}
+
+export interface Activity {
+  kind: "thinking" | "waiting";
+  since: number;
+  // The harness's estimate of thinking tokens so far, from system/thinking_tokens.
+  tokens?: number;
 }
 
 export interface RunStats {
@@ -148,44 +180,74 @@ export interface Trajectory {
 
 export const emptyTrajectory: Trajectory = { runs: [], eventCount: 0 };
 
-// "start" opens a live run when its prompt is sent (resumed: the request carries a session id to continue).
-// "end" is dispatched when the event stream closes, with an error if the request itself failed.
+// Every action that moves time forward carries `at` (ms), so timers come from the actions and the reducer
+// stays pure. "start" opens a live run when its prompt is sent (resumed: the request carries a session id to
+// continue). "end" is dispatched when the event stream closes: with an error if the request itself failed,
+// or stopped when the reader pressed Stop.
 export type Action =
   | { type: "reset" }
-  | { type: "start"; prompt: string; resumed: boolean }
-  | { type: "event"; event: StreamEvent }
-  | { type: "end"; error?: string };
+  | { type: "start"; prompt: string; resumed: boolean; at: number }
+  | { type: "event"; event: StreamEvent; at: number }
+  | { type: "end"; error?: string; stopped?: boolean; at: number };
 
 export function reducer(state: Trajectory, action: Action): Trajectory {
   if (action.type === "reset") return emptyTrajectory;
-  if (action.type === "start") {
-    const run = newRun(state.runs.length + 1, { prompt: action.prompt, resumed: action.resumed, awaitingInit: true });
-    return { ...state, runs: [...state.runs, run] };
-  }
-  if (action.type === "end") return endStream(state, action.error);
-  return applyEvent(state, action.event);
+  if (action.type === "start") return startRun(state, action.prompt, action.resumed, action.at);
+  if (action.type === "end") return endStream(state, action);
+  return applyEvent(state, action.event, action.at);
 }
 
-function newRun(index: number, fields: Partial<Run> = {}): Run {
-  return { index, sessionId: "", model: "", cwd: "", items: [], status: "running", resumed: false, ...fields };
+function newRun(index: number, at: number, fields: Partial<Run> = {}): Run {
+  return {
+    index,
+    sessionId: "",
+    model: "",
+    cwd: "",
+    items: [],
+    status: "running",
+    resumed: false,
+    startedAt: at,
+    activity: { kind: "waiting", since: at },
+    ...fields,
+  };
+}
+
+function startRun(state: Trajectory, prompt: string, resumed: boolean, at: number): Trajectory {
+  const run = newRun(state.runs.length + 1, at, { prompt, resumed, awaitingInit: true });
+  return { ...state, runs: [...state.runs, run] };
 }
 
 // A run that is still running when the stream closes never got its result event, so it failed.
 // If nothing arrived at all, a placeholder run carries the failure so it is still visible.
 // A failure the server already reported is kept, since it says more than "the stream ended".
-function endStream(state: Trajectory, error?: string): Trajectory {
-  const failure = error
-    ? { kind: "request failed", message: error }
-    : { kind: "stream ended", message: "The event stream ended before the run's result event arrived." };
-  if (state.runs.length === 0) return { ...state, runs: [newRun(1, { status: "failed", failure })] };
-  const runs = state.runs.map((run) =>
-    run.status === "running" ? { ...run, status: "failed" as const, failure: run.failure ?? failure, awaitingInit: false } : run,
-  );
+function endStream(state: Trajectory, action: { error?: string; stopped?: boolean; at: number }): Trajectory {
+  const failure = action.stopped
+    ? { kind: "stopped", message: "Stopped by user" }
+    : action.error
+      ? { kind: "request failed", message: action.error }
+      : { kind: "stream ended", message: "The event stream ended before the run's result event arrived." };
+  if (state.runs.length === 0) return { ...state, runs: [newRun(1, action.at, { status: "failed", failure, endedAt: action.at })] };
+  const runs = state.runs.map((run) => {
+    const settled = { ...run, items: finalizeText(run.items) };
+    if (run.status !== "running") return settled;
+    return { ...settled, status: "failed" as const, failure: run.failure ?? failure, awaitingInit: false, endedAt: action.at };
+  });
   return { ...state, runs };
 }
 
-function applyEvent(state: Trajectory, ev: StreamEvent): Trajectory {
+// Text left half-streamed when a run ends stays as it is, no longer marked as arriving.
+function finalizeText(items: Item[]): Item[] {
+  return items.some((item) => item.kind === "text" && item.streaming)
+    ? items.map((item) => (item.kind === "text" && item.streaming ? { ...item, streaming: false } : item))
+    : items;
+}
+
+function applyEvent(state: Trajectory, ev: StreamEvent, at: number): Trajectory {
   const eventCount = state.eventCount + 1;
+  const withRuns = (runs: Run[]) => ({ runs, eventCount });
+
+  // A recording replays the prompt that started each live run.
+  if (isServerPrompt(ev)) return { ...startRun(state, ev.prompt ?? "", ev.resumed === true, at), eventCount };
 
   // Each init event starts a new run (a resumed session prints a fresh init). A live run that is
   // waiting for its init takes it instead; a second init in the same stream (the harness continuing
@@ -195,69 +257,115 @@ function applyEvent(state: Trajectory, ev: StreamEvent): Trajectory {
     const seenSession = state.runs.some((r) => r.sessionId === ev.session_id);
     const details = { sessionId: ev.session_id, model: ev.model, cwd: ev.cwd };
     if (last?.awaitingInit) {
-      const filled: Run = { ...last, ...details, resumed: last.resumed || seenSession, awaitingInit: false };
-      return { runs: [...state.runs.slice(0, -1), filled], eventCount };
+      return withRuns(replaceLast(state.runs, { ...last, ...details, resumed: last.resumed || seenSession, awaitingInit: false }));
     }
-    const run = newRun(state.runs.length + 1, { ...details, resumed: seenSession });
-    return { runs: [...state.runs, run], eventCount };
+    return withRuns([...state.runs, newRun(state.runs.length + 1, at, { ...details, resumed: seenSession })]);
   }
+
+  const runs = state.runs.length > 0 ? state.runs : [newRun(1, at)];
+  const last = runs[runs.length - 1];
 
   // The server could not start the run (e.g. a bad working directory) or claude died before a result.
   if (isServerError(ev)) {
-    const runs = state.runs.length > 0 ? state.runs : [newRun(1)];
-    const last = runs[runs.length - 1];
-    const failed: Run = { ...last, status: "failed", awaitingInit: false, failure: { kind: "error", message: ev.message ?? "unknown error" } };
-    return { runs: [...runs.slice(0, -1), failed], eventCount };
+    const failure = { kind: "error", message: ev.message ?? "unknown error" };
+    return withRuns(replaceLast(runs, { ...last, status: "failed", awaitingInit: false, failure, endedAt: at }));
   }
 
   // The result event closes the current run: is_error decides finished vs failed.
-  if (isResult(ev) && state.runs.length > 0) {
-    const current = state.runs[state.runs.length - 1];
+  if (isResult(ev)) {
     const stats: RunStats = {
-      runCostUsd: runCost(state.runs.slice(0, -1), current, ev.total_cost_usd),
+      runCostUsd: runCost(runs.slice(0, -1), last, ev.total_cost_usd),
       sessionCostUsd: ev.total_cost_usd,
       durationMs: ev.duration_ms,
       numTurns: ev.num_turns,
     };
-    const last = { ...current, origin: ev.origin?.kind, stats };
+    const closed = { ...last, items: finalizeText(last.items), origin: ev.origin?.kind, stats, endedAt: at };
     const ended: Run = ev.is_error
-      ? { ...last, status: "failed", failure: { kind: ev.subtype, message: ev.errors?.join("\n") || ev.subtype } }
-      : { ...last, status: "finished" };
-    return { runs: [...state.runs.slice(0, -1), ended], eventCount };
+      ? { ...closed, status: "failed", failure: { kind: ev.subtype, message: ev.errors?.join("\n") || ev.subtype } }
+      : { ...closed, status: "finished" };
+    return withRuns(replaceLast(runs, ended));
+  }
+
+  // The model is thinking: no visible output yet, only the harness's running token estimate.
+  if (isThinking(ev)) {
+    const since = last.activity.kind === "thinking" ? last.activity.since : at;
+    return withRuns(replaceLast(runs, { ...last, activity: { kind: "thinking", since, tokens: ev.estimated_tokens } }));
+  }
+
+  // Partial messages: a text block opens as an empty streaming item and grows with each delta.
+  if (isPartial(ev)) {
+    const inner = ev.event;
+    const messageId = ev.api_message_id;
+    if (!messageId) return { ...state, eventCount };
+    if (inner.type === "content_block_start" && inner.content_block?.type === "text") {
+      const seq = last.items.length;
+      const item: TextItem = {
+        kind: "text",
+        key: `${last.index}:${seq}`,
+        seq,
+        text: "",
+        parentId: ev.parent_tool_use_id ?? null,
+        streaming: true,
+        messageId,
+        blockIndex: inner.index,
+      };
+      return withRuns(replaceLast(runs, { ...last, items: [...last.items, item], activity: { kind: "waiting", since: at } }));
+    }
+    if (inner.type === "content_block_delta" && inner.delta?.type === "text_delta" && inner.delta.text) {
+      const delta = inner.delta.text;
+      const items = last.items.map((item) =>
+        item.kind === "text" && item.streaming && item.messageId === messageId && item.blockIndex === inner.index
+          ? { ...item, text: item.text + delta }
+          : item,
+      );
+      return withRuns(replaceLast(runs, { ...last, items }));
+    }
+    return { ...state, eventCount };
   }
 
   // Assistant events carry one content block each; text and tool_use become items, thinking is skipped.
-  // Partial-message stream_events are ignored because the complete assistant event always follows them.
+  // A text that was already streaming in is finalized with the complete text instead of added again.
   if (isAssistant(ev)) {
-    const runs = state.runs.length > 0 ? state.runs : [newRun(1)];
-    const last = runs[runs.length - 1];
-    const items = [...last.items];
+    let items = [...last.items];
     const parentId = ev.parent_tool_use_id ?? null;
     const messageId = ev.message.id;
     for (const block of ev.message.content) {
       const seq = items.length;
       const key = `${last.index}:${seq}`;
-      if (block.type === "text" && block.text.trim()) {
-        items.push({ kind: "text", key, seq, text: block.text, parentId });
+      if (block.type === "text") {
+        const streamed = items.findIndex((item) => item.kind === "text" && item.streaming && item.messageId === messageId);
+        if (streamed !== -1) {
+          items = block.text.trim()
+            ? items.map((item, i) => (i === streamed ? { ...(item as TextItem), text: block.text, streaming: false } : item))
+            : items.filter((_, i) => i !== streamed);
+        } else if (block.text.trim()) {
+          items.push({ kind: "text", key, seq, text: block.text, parentId });
+        }
       } else if (block.type === "tool_use") {
-        items.push({ kind: "tool", key, seq, id: block.id, name: block.name, input: block.input ?? {}, parentId, messageId });
+        items.push({ kind: "tool", key, seq, id: block.id, name: block.name, input: block.input ?? {}, parentId, messageId, startedAt: at });
       }
     }
-    return { runs: [...runs.slice(0, -1), { ...last, items }], eventCount };
+    return withRuns(replaceLast(runs, { ...last, items, activity: { kind: "waiting", since: at } }));
   }
 
   // Tool results come back in user events; attach each one to the call with the same tool_use_id.
   if (isUser(ev) && Array.isArray(ev.message.content)) {
-    let runs = state.runs;
+    let updated = state.runs;
     for (const block of ev.message.content) {
-      if (block.type === "tool_result") runs = attachResult(runs, block as ToolResultContent);
+      if (block.type === "tool_result") updated = attachResult(updated, block as ToolResultContent, at);
     }
-    return { runs, eventCount };
+    const current = updated.at(-1);
+    if (current) updated = replaceLast(updated, { ...current, activity: { kind: "waiting", since: at } });
+    return withRuns(updated);
   }
 
-  if (isTask(ev)) return { runs: updateSubagent(state.runs, ev), eventCount };
+  if (isTask(ev)) return withRuns(updateSubagent(state.runs, ev));
 
   return { ...state, eventCount };
+}
+
+function replaceLast(runs: Run[], run: Run): Run[] {
+  return [...runs.slice(0, -1), run];
 }
 
 // task_started announces the subagent behind an Agent/Task call; task_updated and task_notification report
@@ -281,9 +389,9 @@ function runCost(earlier: Run[], run: Run, sessionTotal: number): number | undef
   return run.resumed ? undefined : sessionTotal;
 }
 
-function attachResult(runs: Run[], block: ToolResultContent): Run[] {
+function attachResult(runs: Run[], block: ToolResultContent, at: number): Run[] {
   const result: ToolResult = { text: resultText(block.content), isError: block.is_error === true };
-  return updateTool(runs, (t) => t.id === block.tool_use_id, (t) => ({ ...t, result }));
+  return updateTool(runs, (t) => t.id === block.tool_use_id, (t) => ({ ...t, result, endedAt: at }));
 }
 
 // Replaces the first tool call matching pred. Searches the newest run first, since a result or

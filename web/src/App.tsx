@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
-import { Composer, type Mode } from "./components/Composer.tsx";
+import { Composer, type FixtureOption, type Mode } from "./components/Composer.tsx";
 import { ItemList } from "./components/ItemList.tsx";
 import { Outline } from "./components/Outline.tsx";
 import { readNdjson } from "./ndjson.ts";
-import { emptyTrajectory, reducer, type Run, type RunStats, type RunStatus } from "./trajectory.ts";
+import { emptyTrajectory, reducer, type Run, type RunStats } from "./trajectory.ts";
+import { formatElapsed, NowContext, useNow, useTicker } from "./useNow.ts";
 
 type Status =
   | { kind: "idle" }
@@ -11,15 +12,22 @@ type Status =
   | { kind: "done"; run: number }
   | { kind: "error"; run: number; message: string };
 
-interface Fixture {
-  name: string;
+interface Fixture extends FixtureOption {
   runs: number;
 }
+
+// The live session a reload should bring back; the server keeps its events in recordings/.
+const LIVE_SESSION_KEY = "cc-trajectory:live-session";
+// ?model=haiku in the page URL runs live prompts on a cheaper model (for testing the page itself).
+const MODEL_OVERRIDE = new URLSearchParams(window.location.search).get("model") ?? undefined;
 
 export function App() {
   const [trajectory, dispatch] = useReducer(reducer, emptyTrajectory);
   const [mode, setMode] = useState<Mode>("live");
   const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  // Aborting the request stops the run: the server ends the agent process when the connection closes.
+  const abortRef = useRef<AbortController | null>(null);
   // Live mode: the directory the agent works in and the prompt being typed.
   const [cwd, setCwd] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -34,21 +42,39 @@ export function App() {
   const [focus, setFocus] = useState<string | null>(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const clearFocus = useCallback(() => setFocus(null), []);
-  const nearBottom = useNearBottom();
+  const current = useCurrentStep(trajectory);
+  const { ref: nearBottom, near } = useNearBottom();
+  const now = useTicker(busy);
   // A follow-up resumes the session of the latest run that reported one.
   const sessionId = trajectory.runs.findLast((run) => run.sessionId)?.sessionId ?? null;
 
-  function jump(id: string) {
-    setFocus(id);
+  function jump(target: string) {
+    setFocus(target);
     setOutlineOpen(false);
   }
 
-  useEffect(() => {
+  const loadFixtures = useCallback(() => {
     fetch("/api/fixtures")
       .then((res) => res.json())
       .then(setFixtures)
       .catch(() => setFixtures([]));
   }, []);
+
+  useEffect(loadFixtures, [loadFixtures]);
+
+  // Bring back the live session from before a reload (once, even though StrictMode runs effects twice).
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    void restoreLive();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Remember the live session so a reload can restore it.
+  useEffect(() => {
+    if (mode !== "live" || restoring || !sessionId) return;
+    writeSaved({ sessionId, cwd });
+  }, [mode, restoring, sessionId, cwd]);
 
   // Follow new events only while the reader is already at the bottom, so scrolling up to read is not interrupted.
   useLayoutEffect(() => {
@@ -56,18 +82,53 @@ export function App() {
   }, [trajectory, nearBottom]);
 
   // Reads an NDJSON event stream into the trajectory; "end" then fails any run that never got its result.
-  async function consume(request: Promise<Response>) {
+  async function consume(open: (signal: AbortSignal) => Promise<Response>): Promise<string | null> {
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
-      const res = await request;
+      const res = await open(controller.signal);
       if (!res.ok || !res.body) throw new Error(`request failed (HTTP ${res.status}): ${await res.text()}`);
-      for await (const event of readNdjson(res.body)) dispatch({ type: "event", event });
-      dispatch({ type: "end" });
+      for await (const event of readNdjson(res.body)) dispatch({ type: "event", event, at: Date.now() });
+      dispatch({ type: "end", at: Date.now() });
       return null;
     } catch (err) {
+      if (controller.signal.aborted) {
+        dispatch({ type: "end", stopped: true, at: Date.now() });
+        return "stopped";
+      }
       const message = err instanceof Error ? err.message : String(err);
-      dispatch({ type: "end", error: message });
+      dispatch({ type: "end", error: message, at: Date.now() });
       return message;
+    } finally {
+      abortRef.current = null;
     }
+  }
+
+  function stop() {
+    abortRef.current?.abort();
+  }
+
+  function toLatest() {
+    nearBottom.current = true;
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+  }
+
+  async function restoreLive() {
+    const saved = readSaved();
+    if (!saved) return;
+    setCwd(saved.cwd);
+    setRestoring(true);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/recordings/${encodeURIComponent(saved.sessionId)}`);
+      if (!res.ok || !res.body) throw new Error(`no recording (HTTP ${res.status})`);
+      for await (const event of readNdjson(res.body)) dispatch({ type: "event", event, at: Date.now() });
+      dispatch({ type: "end", at: Date.now() });
+    } catch {
+      writeSaved(null);
+    }
+    setRestoring(false);
+    setBusy(false);
   }
 
   function switchMode(next: Mode) {
@@ -75,6 +136,8 @@ export function App() {
     setNextRun(1);
     setStatus({ kind: "idle" });
     dispatch({ type: "reset" });
+    if (next === "live") void restoreLive();
+    else loadFixtures();
   }
 
   // Starts a live run. With a session already on the page the prompt is a follow-up that resumes it,
@@ -83,16 +146,18 @@ export function App() {
     const text = prompt.trim();
     if (!text || !cwd.trim()) return;
     nearBottom.current = true;
-    dispatch({ type: "start", prompt: text, resumed: sessionId !== null });
+    dispatch({ type: "start", prompt: text, resumed: sessionId !== null, at: Date.now() });
     setPrompt("");
     setBusy(true);
-    const body = { cwd, prompt: text, sessionId: sessionId ?? undefined };
-    await consume(fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    const body = JSON.stringify({ cwd, prompt: text, sessionId: sessionId ?? undefined, model: MODEL_OVERRIDE });
+    await consume((signal) => fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body, signal }));
     setBusy(false);
+    loadFixtures();
   }
 
   function newSession() {
     dispatch({ type: "reset" });
+    writeSaved(null);
   }
 
   function chooseFixture(name: string) {
@@ -110,75 +175,88 @@ export function App() {
     nearBottom.current = true;
     setStatus({ kind: "streaming", run });
     setBusy(true);
-    const error = await consume(fetch(`/api/replay?file=${encodeURIComponent(fixture)}&run=${run}`));
+    const error = await consume((signal) => fetch(`/api/replay?file=${encodeURIComponent(fixture)}&run=${run}`, { signal }));
     setStatus(error ? { kind: "error", run, message: error } : { kind: "done", run });
     setBusy(false);
     setNextRun(run >= totalRuns ? 1 : run + 1);
   }
 
   return (
-    <div className="page">
-      <header className="header">
-        <div>
-          <h1>Claude Code Trajectory</h1>
-          <p className="subtitle">
-            {mode === "live"
-              ? "Drive Claude Code headless: pick a working directory, type a prompt, watch the agent work."
-              : "Replaying a recorded stream-json run, event by event."}
-          </p>
-        </div>
-      </header>
+    <NowContext.Provider value={now}>
+      <div className="page">
+        <header className="header">
+          <div>
+            <h1>Claude Code Trajectory</h1>
+            <p className="subtitle">
+              {mode === "live"
+                ? "Drive Claude Code headless: pick a working directory, type a prompt, watch the agent work."
+                : "Replaying a recorded stream-json run, event by event."}
+            </p>
+          </div>
+        </header>
 
-      <div className="layout">
-        <div className="main-col">
-          <main className="runs">
-            {trajectory.runs.length === 0 ? (
-              <div className="card">
-                <p className="empty">
-                  {mode === "live"
-                    ? "Choose a working directory, type a prompt below, and press Run."
-                    : "Pick a recorded run below and press Replay to stream it into the page."}
-                </p>
-              </div>
-            ) : (
-              trajectory.runs.map((run) => <RunView key={run.index} run={run} focus={focus} onFocused={clearFocus} />)
-            )}
-          </main>
-          <Composer
-            mode={mode}
-            onMode={switchMode}
-            busy={busy}
-            live={{
-              cwd,
-              onCwd: setCwd,
-              sessionId,
-              runCount: trajectory.runs.length,
-              prompt,
-              onPrompt: setPrompt,
-              onRun: runLive,
-              onNewSession: newSession,
-            }}
-            replay={{
-              fixtures: fixtures.map((f) => f.name),
-              fixture,
-              onFixture: chooseFixture,
-              nextRun,
-              totalRuns,
-              status: <StatusText status={status} totalRuns={totalRuns} />,
-              onReplay: replay,
-            }}
-          />
+        <div className="layout">
+          <div className="main-col">
+            <main className="runs">
+              {trajectory.runs.length === 0 ? (
+                <div className="card">
+                  <p className="empty">
+                    {restoring
+                      ? "Restoring the previous session…"
+                      : mode === "live"
+                        ? "Choose a working directory, type a prompt below, and press Run."
+                        : "Pick a recorded run below and press Replay to stream it into the page."}
+                  </p>
+                </div>
+              ) : (
+                trajectory.runs.map((run) => <RunView key={run.index} run={run} focus={focus} onFocused={clearFocus} />)
+              )}
+            </main>
+            <div className="composer-dock">
+              {busy && !near && (
+                <button className="latest" onClick={toLatest}>
+                  ↓ Latest
+                </button>
+              )}
+              <Composer
+                mode={mode}
+                onMode={switchMode}
+                busy={busy}
+                onStop={stop}
+                live={{
+                  cwd,
+                  onCwd: setCwd,
+                  sessionId,
+                  runCount: trajectory.runs.length,
+                  prompt,
+                  onPrompt: setPrompt,
+                  onRun: runLive,
+                  onNewSession: newSession,
+                  restoring,
+                }}
+                replay={{
+                  fixtures,
+                  fixture,
+                  onFixture: chooseFixture,
+                  nextRun,
+                  totalRuns,
+                  status: <StatusText status={status} totalRuns={totalRuns} />,
+                  onReplay: replay,
+                }}
+              />
+            </div>
+          </div>
+          <aside className={outlineOpen ? "outline-pane open" : "outline-pane"}>
+            <Outline runs={trajectory.runs} onJump={jump} current={current} />
+          </aside>
         </div>
-        <aside className={outlineOpen ? "outline-pane open" : "outline-pane"}>
-          <Outline runs={trajectory.runs} onJump={jump} />
-        </aside>
+
+        {/* On a narrow window the outline folds away behind this button. */}
+        <button className="outline-toggle" onClick={() => setOutlineOpen((o) => !o)} aria-expanded={outlineOpen}>
+          {outlineOpen ? "✕ Close" : "☰ Outline"}
+        </button>
       </div>
-
-      {/* On a narrow window the outline folds away behind this button. */}
-      <button className="outline-toggle" onClick={() => setOutlineOpen((o) => !o)} aria-expanded={outlineOpen}>
-        {outlineOpen ? "✕ Close" : "☰ Outline"}
-      </button>
-    </div>
+    </NowContext.Provider>
   );
 }
 
@@ -191,7 +269,7 @@ function RunView({ run, focus, onFocused }: { run: Run; focus: string | null; on
         <SessionLabel run={run} />
         {run.model && <span className="mono">{run.model}</span>}
         <span className="run-line" />
-        <RunStatusBadge status={run.status} />
+        <RunStatusBadge run={run} />
       </div>
       {run.prompt && (
         <div className="you">
@@ -200,6 +278,7 @@ function RunView({ run, focus, onFocused }: { run: Run; focus: string | null; on
         </div>
       )}
       <ItemList items={run.items} cwd={run.cwd} runEnded={ended} focus={focus} onFocused={onFocused} />
+      <ActivityLine run={run} />
       {run.failure && (
         <div className="run-error">
           <strong>{run.failure.kind}</strong>
@@ -208,6 +287,25 @@ function RunView({ run, focus, onFocused }: { run: Run; focus: string | null; on
       )}
       {run.stats && <RunStatsLine stats={run.stats} sessionId={run.sessionId} />}
     </section>
+  );
+}
+
+// What the agent is doing while nothing visible is happening: starting up, or the model thinking or
+// composing its next step. Hidden while a call is pending (it has its own timer) or text is streaming in.
+function ActivityLine({ run }: { run: Run }) {
+  const now = useNow();
+  if (run.status !== "running") return null;
+  if (run.items.some((item) => (item.kind === "tool" && !item.result) || (item.kind === "text" && item.streaming))) return null;
+  const elapsed = formatElapsed(now - run.activity.since);
+  const label = run.awaitingInit
+    ? `starting claude… ${elapsed}`
+    : run.activity.kind === "thinking"
+      ? `thinking… ${elapsed}${run.activity.tokens ? ` · ~${run.activity.tokens} tokens` : ""}`
+      : `waiting for the model… ${elapsed}`;
+  return (
+    <div className="activity">
+      <span className="dot" /> {label}
+    </div>
   );
 }
 
@@ -250,12 +348,13 @@ function SessionLabel({ run }: { run: Run }) {
   return <span className="resumed">↻ resumed session {session}</span>;
 }
 
-function RunStatusBadge({ status }: { status: RunStatus }) {
-  switch (status) {
+function RunStatusBadge({ run }: { run: Run }) {
+  const now = useNow();
+  switch (run.status) {
     case "running":
       return (
         <span className="run-status run-status-running">
-          <span className="dot" /> running
+          <span className="dot" /> running · {formatElapsed(now - run.startedAt)}
         </span>
       );
     case "finished":
@@ -285,14 +384,64 @@ function StatusText({ status, totalRuns }: { status: Status; totalRuns: number }
   }
 }
 
+// Whether the page is scrolled to (near) the bottom: a ref for the auto-follow logic, and state for the
+// "Latest" button that appears once the reader scrolls away from new events.
 function useNearBottom() {
-  const near = useRef(true);
+  const ref = useRef(true);
+  const [near, setNear] = useState(true);
   useEffect(() => {
     const update = () => {
-      near.current = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
+      ref.current = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
+      setNear(ref.current);
     };
     window.addEventListener("scroll", update, { passive: true });
     return () => window.removeEventListener("scroll", update);
   }, []);
-  return near;
+  return { ref, near };
+}
+
+// The step the reader is at: the last step (in page order) whose top has scrolled past a reading line near the
+// top of the window. Steps carry data-target; the outline highlights the matching name.
+function useCurrentStep(trajectory: unknown): string | null {
+  const [current, setCurrent] = useState<string | null>(null);
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      let found: string | null = null;
+      for (const el of document.querySelectorAll<HTMLElement>(".runs [data-target]")) {
+        if (el.getBoundingClientRect().top <= 140) found = el.dataset.target ?? found;
+        else if (found === null) found = el.dataset.target ?? null;
+      }
+      setCurrent(found);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
+  }, [trajectory]);
+  return current;
+}
+
+function readSaved(): { sessionId: string; cwd: string } | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LIVE_SESSION_KEY) ?? "null");
+    return saved && typeof saved.sessionId === "string" ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSaved(saved: { sessionId: string; cwd: string } | null) {
+  try {
+    if (saved) localStorage.setItem(LIVE_SESSION_KEY, JSON.stringify(saved));
+    else localStorage.removeItem(LIVE_SESSION_KEY);
+  } catch {
+    // Storage can be unavailable (private window, blocked site data); the page works without it.
+  }
 }
