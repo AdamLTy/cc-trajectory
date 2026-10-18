@@ -267,7 +267,7 @@ function applyEvent(state: Trajectory, ev: StreamEvent, at: number): Trajectory 
 
   // The server could not start the run (e.g. a bad working directory) or claude died before a result.
   if (isServerError(ev)) {
-    const failure = { kind: "error", message: ev.message ?? "unknown error" };
+    const failure = { kind: ev.stopped ? "stopped" : "error", message: ev.message ?? "unknown error" };
     return withRuns(replaceLast(runs, { ...last, status: "failed", awaitingInit: false, failure, endedAt: at }));
   }
 

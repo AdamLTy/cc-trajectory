@@ -79,6 +79,8 @@ export interface ServerEvent {
   type: "server";
   subtype: "error" | "exit" | "prompt";
   message?: string;
+  // On an error in a recording: the run was stopped from the page rather than failing on its own.
+  stopped?: boolean;
   code?: number | null;
   prompt?: string;
   resumed?: boolean;

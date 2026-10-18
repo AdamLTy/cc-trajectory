@@ -1,0 +1,256 @@
+/* Syntax colors for Read results. Light values here; the dark theme repeats them below. */
+:root {
+  --code-keyword: #cf222e;
+  --code-string: #0a3069;
+  --code-comment: #6e7781;
+  --code-number: #0550ae;
+  --code-title: #8250df;
+  --code-type: #953800;
+  --code-tag: #116329;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --code-keyword: #ff7b72;
+    --code-string: #a5d6ff;
+    --code-comment: #8b949e;
+    --code-number: #79c0ff;
+    --code-title: #d2a8ff;
+    --code-type: #ffa657;
+    --code-tag: #7ee787;
+  }
+}
+
+:root[data-theme="dark"] {
+  --code-keyword: #ff7b72;
+  --code-string: #a5d6ff;
+  --code-comment: #8b949e;
+  --code-number: #79c0ff;
+  --code-title: #d2a8ff;
+  --code-type: #ffa657;
+  --code-tag: #7ee787;
+}
+
+/* A Read result as code: line numbers in a gutter, code beside them (wrapped lines stay in the code column). */
+.code-result pre.code-listing {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+
+.code-line {
+  display: contents;
+}
+
+.code-ln {
+  margin-right: 10px;
+  padding-right: 10px;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+}
+
+.code-text {
+  font: inherit;
+}
+
+/* Lines the harness added after the file content. */
+.code-result pre.code-notes {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.hljs-keyword,
+.hljs-doctag,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-variable.language_,
+.hljs-meta .hljs-keyword {
+  color: var(--code-keyword);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-code,
+.hljs-meta .hljs-string {
+  color: var(--code-string);
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--code-comment);
+  font-style: italic;
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-variable.constant_,
+.hljs-meta,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-selector-attr,
+.hljs-link {
+  color: var(--code-number);
+}
+
+.hljs-title,
+.hljs-section {
+  color: var(--code-title);
+}
+
+.hljs-type,
+.hljs-built_in,
+.hljs-title.class_,
+.hljs-bullet {
+  color: var(--code-type);
+}
+
+.hljs-name,
+.hljs-selector-tag,
+.hljs-selector-pseudo {
+  color: var(--code-tag);
+}
+
+.hljs-addition {
+  color: var(--ok);
+}
+
+.hljs-deletion {
+  color: var(--error);
+}
+
+.hljs-section,
+.hljs-strong {
+  font-weight: 700;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+/* Task-tracking calls, shown under the call row the way a diff is for edits. */
+.task-view {
+  margin: 0 0 6px 62px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.lane-detail .task-view {
+  margin: 4px 0 6px;
+}
+
+.todo-list {
+  list-style: none;
+}
+
+.todo {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.todo-mark {
+  flex: none;
+  width: 1.1em;
+  text-align: center;
+}
+
+.todo-pending .todo-mark {
+  color: var(--muted);
+}
+
+.todo-in_progress .todo-mark {
+  color: var(--live);
+}
+
+.todo-in_progress .todo-text {
+  font-weight: 600;
+}
+
+.todo-completed {
+  color: var(--muted);
+}
+
+.todo-completed .todo-mark {
+  color: var(--ok);
+}
+
+.todo-completed .todo-text {
+  text-decoration: line-through;
+}
+
+.task-tag {
+  color: var(--muted);
+  font: 600 11px var(--mono);
+}
+
+.task-subject {
+  font-weight: 600;
+}
+
+.task-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.task-update {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.task-id,
+.task-status {
+  font: 600 12px var(--mono);
+}
+
+.task-arrow {
+  color: var(--muted);
+}
+
+.task-status-pending {
+  color: var(--muted);
+}
+
+.task-status-in_progress {
+  color: var(--live);
+}
+
+.task-status-completed {
+  color: var(--ok);
+}
+
+.task-status-deleted {
+  color: var(--error);
+}
+
+.task-update-subject {
+  font-weight: 600;
+}
+
+.task-update-also {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .task-view {
+    margin-left: 0;
+  }
+}

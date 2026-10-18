@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { containsTarget, descendants, subagentDone, targetOf, type Item, type ToolItem } from "../trajectory.ts";
 import { DiffView, editHunks } from "./DiffView.tsx";
 import type { RenderContext } from "./ItemList.tsx";
+import { TaskView } from "./RichResults.tsx";
 import { SubagentReport } from "./SubagentReport.tsx";
 import { plainPreview, TextBlock } from "./TextBlock.tsx";
 import { CallResult, CallStatus, summarize, toolCategory } from "./ToolCall.tsx";
@@ -140,6 +141,7 @@ function LaneCell({ item, ctx }: { item: Item; ctx: RenderContext }) {
       {open && (
         <div className="lane-detail">
           {hunks ? <DiffView hunks={hunks} /> : <pre className="tool-input">{JSON.stringify(item.input, null, 2)}</pre>}
+          <TaskView name={item.name} input={item.input} />
           <CallResult item={item} compact />
         </div>
       )}

@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { isSpawner, type ToolItem } from "../trajectory.ts";
 import { formatElapsed, useNow } from "../useNow.ts";
 import { DiffView, diffStats, editHunks } from "./DiffView.tsx";
+import { ReadResult, TaskView } from "./RichResults.tsx";
 import { SubagentReport } from "./SubagentReport.tsx";
 import { looksFailed, ToolResultView } from "./ToolResult.tsx";
 import { useJumpTarget } from "./useJumpTarget.ts";
@@ -38,7 +39,8 @@ interface ToolCallProps {
 
 // children (a subagent's nested events) render between the call and its result,
 // since the result of an Agent call is the report the subagent hands back.
-// Edits show their change as a diff right under the call; the raw input stays one click away.
+// Edits show their change as a diff right under the call, task tools their checklist or task; the raw input
+// stays one click away.
 export function ToolCall({ item, cwd, runEnded, focused, onFocused, children }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -59,20 +61,26 @@ export function ToolCall({ item, cwd, runEnded, focused, onFocused, children }: 
       </button>
       {open && <pre className="tool-input">{JSON.stringify(item.input, null, 2)}</pre>}
       {hunks && <DiffView hunks={hunks} />}
+      <TaskView name={item.name} input={item.input} />
       {children}
       {item.result && <CallResult item={item} />}
     </div>
   );
 }
 
-// An Agent call's result is the subagent's report. A failed command keeps its end in view, where the error is;
-// that includes command output that reports a failure while the command itself exits 0 (`pytest | tail`).
+// An Agent call's result is the subagent's report, a file Read's is code. A failed command keeps its end in view,
+// where the error is; that includes command output that reports a failure while the command itself exits 0
+// (`pytest | tail`).
 export function CallResult({ item, compact }: { item: ToolItem; compact?: boolean }) {
   if (!item.result) return null;
   if (isSpawner(item.name)) return <SubagentReport result={item.result} compact={compact} />;
+  const limits = compact ? { foldedLines: 6, foldedLineChars: 90 } : {};
+  if (item.name === "Read" && !item.result.isError) {
+    const filePath = typeof item.input.file_path === "string" ? item.input.file_path : "";
+    return <ReadResult result={item.result} filePath={filePath} {...limits} />;
+  }
   const isBash = item.name === "Bash";
   const tail = item.result.isError || (isBash && looksFailed(item.result.text));
-  const limits = compact ? { foldedLines: 6, foldedLineChars: 90 } : {};
   return <ToolResultView result={item.result} tail={tail} highlight={isBash} {...limits} />;
 }
 

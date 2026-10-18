@@ -2,9 +2,12 @@ import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState }
 import { Composer, type FixtureOption, type Mode } from "./components/Composer.tsx";
 import { ItemList } from "./components/ItemList.tsx";
 import { Outline } from "./components/Outline.tsx";
+import { ShortcutHelp, ShortcutHint } from "./components/ShortcutHelp.tsx";
+import { ThemeToggle } from "./components/ThemeToggle.tsx";
 import { readNdjson } from "./ndjson.ts";
 import { emptyTrajectory, reducer, type Run, type RunStats } from "./trajectory.ts";
 import { formatElapsed, NowContext, useNow, useTicker } from "./useNow.ts";
+import { useShortcuts, useStepNavigation } from "./useShortcuts.ts";
 
 type Status =
   | { kind: "idle" }
@@ -52,6 +55,22 @@ export function App() {
     setFocus(target);
     setOutlineOpen(false);
   }
+
+  // Keyboard shortcuts, listed by ShortcutHelp. A handler returns false when it has nothing to do.
+  const [helpOpen, setHelpOpen] = useState(false);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const step = useStepNavigation(current, jump);
+  useShortcuts({
+    onEscape: () => (helpOpen ? setHelpOpen(false) : busy ? stop() : false),
+    // The prompt only exists in Live mode, and is disabled while a run streams.
+    onFocusPrompt: () => {
+      const field = promptRef.current;
+      if (mode !== "live" || !field || field.disabled) return false;
+      field.focus();
+    },
+    onStep: step,
+    onToggleHelp: () => setHelpOpen((open) => !open),
+  });
 
   const loadFixtures = useCallback(() => {
     fetch("/api/fixtures")
@@ -185,13 +204,17 @@ export function App() {
     <NowContext.Provider value={now}>
       <div className="page">
         <header className="header">
-          <div>
+          <div className="header-title">
             <h1>Claude Code Trajectory</h1>
             <p className="subtitle">
               {mode === "live"
                 ? "Drive Claude Code headless: pick a working directory, type a prompt, watch the agent work."
                 : "Replaying a recorded stream-json run, event by event."}
             </p>
+          </div>
+          <div className="header-actions">
+            <ShortcutHint onHelp={() => setHelpOpen(true)} />
+            <ThemeToggle />
           </div>
         </header>
 
@@ -223,6 +246,7 @@ export function App() {
                 onMode={switchMode}
                 busy={busy}
                 onStop={stop}
+                promptRef={promptRef}
                 live={{
                   cwd,
                   onCwd: setCwd,
@@ -255,6 +279,7 @@ export function App() {
         <button className="outline-toggle" onClick={() => setOutlineOpen((o) => !o)} aria-expanded={outlineOpen}>
           {outlineOpen ? "✕ Close" : "☰ Outline"}
         </button>
+        <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
       </div>
     </NowContext.Provider>
   );

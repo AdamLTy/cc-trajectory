@@ -137,6 +137,10 @@ async function handleRun(req: http.IncomingMessage, res: http.ServerResponse) {
   } catch (err) {
     console.error("run failed:", err);
   }
+  // The page went away mid-run (Stop, reload, closed tab); note it so a restored session says so too.
+  if (abort.signal.aborted) {
+    recorder.write(JSON.stringify({ type: "server", subtype: "error", stopped: true, message: "Stopped before the run finished" }));
+  }
   await recorder.close();
   res.end();
 }

@@ -1,17 +1,225 @@
+/* Design tokens. Every color in the page comes from a variable here, so the dark theme below can restyle it all.
+   Light values on :root; the dark blocks redefine each color token. */
 :root {
+  color-scheme: light;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif;
+  /* Surfaces and text */
   --bg: #f6f6f3;
   --surface: #ffffff;
+  --subtle: #f4f3ef;
+  --text-block-bg: #fcfcfa;
   --border: #e4e3de;
+  --border-strong: #b9bcc2;
   --text: #1f2328;
   --muted: #6b6f76;
-  --subtle: #f4f3ef;
+  --faint: #a3a6ab;
+  --text-inverse: #fff;
+  --spine: #c8cbd1;
+  --you-bg: #ecedf0;
+  /* Accent and states */
   --accent: #8c1d18;
   --accent-hover: #741612;
+  --on-accent: #fff;
+  --focus-ring: #e4c4bf;
+  --resumed-bg: #f7e9e7;
+  --resumed-fg: var(--accent);
   --live: #b26b00;
   --ok: #1a7f37;
   --error: #b42318;
-  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif;
+  --on-error: #fff;
+  --error-soft: #fdecea;
+  /* A failed call or run */
+  --fail-bg: #fff3f1;
+  --fail-border: #f2c2bc;
+  --fail-text: #8a1c12;
+  /* Tool badges, one pair per category */
+  --badge-read-bg: #e9f0fa;
+  --badge-read-fg: #2b5797;
+  --badge-write-bg: #fcf0d9;
+  --badge-write-fg: #8a5800;
+  --badge-exec-bg: #e1f1ee;
+  --badge-exec-fg: #12675d;
+  --badge-agent-bg: #efe8fb;
+  --badge-agent-fg: #5e35a6;
+  --badge-other-bg: #edeef0;
+  --badge-other-fg: #4a5361;
+  /* Diff lines */
+  --diff-add-bg: #e9f6ec;
+  --diff-add-text: #14532d;
+  --diff-del-bg: #fdeceb;
+  --diff-del-text: #8a1c12;
+  /* Subagents: parallel lanes, nested bodies, outline forks, hand-back reports */
+  --agent: #5e35a6;
+  --agent-muted: #6f55a8;
+  --agent-soft: #c9b6ee;
+  --agent-rail: #ddd0f3;
+  --agent-line: #e6def4;
+  --agent-border: #e3d8f6;
+  --agent-bg: #fcfaff;
+  --agent-hover: #f4effc;
+  --lane-border: #ece6f7;
+  --lane-0: #8b6ad8;
+  --lane-1: #3f8fd2;
+  --lane-2: #2f9e8a;
+  --lane-3: #d08a2e;
+  --report-bg: #fbf9ff;
+  --report-border: #e6ddf6;
+  /* Jump highlight, shadows, hover */
+  --flash-bg: #fdf1cc;
+  --flash-ring: #f0cd6a;
+  --shadow-soft: rgb(0 0 0 / 0.06);
+  --shadow: rgb(0 0 0 / 0.08);
+  --shadow-strong: rgb(0 0 0 / 0.18);
+  --hover-brightness: 0.95;
+}
+
+/* Dark theme: follows the system unless the reader chose light, and always applies when they chose dark.
+   ThemeToggle sets data-theme on <html>; keep the two blocks below identical. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    /* Surfaces and text */
+    --bg: #121316;
+    --surface: #1b1c20;
+    --subtle: #23252a;
+    --text-block-bg: #1f2024;
+    --border: #32353b;
+    --border-strong: #50545c;
+    --text: #e6e7ea;
+    --muted: #9a9ea6;
+    --faint: #6e727a;
+    --text-inverse: #121316;
+    --spine: #474b53;
+    --you-bg: #2a2c32;
+    /* Accent and states */
+    --accent: #d0574c;
+    --accent-hover: #b8463c;
+    --on-accent: #fff;
+    --focus-ring: #6b302b;
+    --resumed-bg: #3a2220;
+    --resumed-fg: #f0948a;
+    --live: #e0a040;
+    --ok: #4cb867;
+    --error: #ec6a61;
+    --on-error: #1b1c20;
+    --error-soft: #3a1f1d;
+    /* A failed call or run */
+    --fail-bg: #2c1a19;
+    --fail-border: #5c2b27;
+    --fail-text: #f4a59c;
+    /* Tool badges, one pair per category */
+    --badge-read-bg: #1d2c42;
+    --badge-read-fg: #8db8ef;
+    --badge-write-bg: #3a2d12;
+    --badge-write-fg: #e8b65a;
+    --badge-exec-bg: #15322d;
+    --badge-exec-fg: #6cc9b8;
+    --badge-agent-bg: #2e2445;
+    --badge-agent-fg: #b99cf0;
+    --badge-other-bg: #2a2d33;
+    --badge-other-fg: #b3bac4;
+    /* Diff lines */
+    --diff-add-bg: #16301f;
+    --diff-add-text: #8fdca5;
+    --diff-del-bg: #3a1d1c;
+    --diff-del-text: #f4a59c;
+    /* Subagents: parallel lanes, nested bodies, outline forks, hand-back reports */
+    --agent: #b99cf0;
+    --agent-muted: #a48bd6;
+    --agent-soft: #5d4a8a;
+    --agent-rail: #3f3560;
+    --agent-line: #352d4d;
+    --agent-border: #3a3152;
+    --agent-bg: #1c1a24;
+    --agent-hover: #2a2438;
+    --lane-border: #2f2a3d;
+    --lane-0: #9d80e6;
+    --lane-1: #5aa5e6;
+    --lane-2: #3fb7a0;
+    --lane-3: #e0a050;
+    --report-bg: #211e2a;
+    --report-border: #3a3152;
+    /* Jump highlight, shadows, hover */
+    --flash-bg: #3d3418;
+    --flash-ring: #a8862c;
+    --shadow-soft: rgb(0 0 0 / 0.35);
+    --shadow: rgb(0 0 0 / 0.4);
+    --shadow-strong: rgb(0 0 0 / 0.55);
+    --hover-brightness: 1.2;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  /* Surfaces and text */
+  --bg: #121316;
+  --surface: #1b1c20;
+  --subtle: #23252a;
+  --text-block-bg: #1f2024;
+  --border: #32353b;
+  --border-strong: #50545c;
+  --text: #e6e7ea;
+  --muted: #9a9ea6;
+  --faint: #6e727a;
+  --text-inverse: #121316;
+  --spine: #474b53;
+  --you-bg: #2a2c32;
+  /* Accent and states */
+  --accent: #d0574c;
+  --accent-hover: #b8463c;
+  --on-accent: #fff;
+  --focus-ring: #6b302b;
+  --resumed-bg: #3a2220;
+  --resumed-fg: #f0948a;
+  --live: #e0a040;
+  --ok: #4cb867;
+  --error: #ec6a61;
+  --on-error: #1b1c20;
+  --error-soft: #3a1f1d;
+  /* A failed call or run */
+  --fail-bg: #2c1a19;
+  --fail-border: #5c2b27;
+  --fail-text: #f4a59c;
+  /* Tool badges, one pair per category */
+  --badge-read-bg: #1d2c42;
+  --badge-read-fg: #8db8ef;
+  --badge-write-bg: #3a2d12;
+  --badge-write-fg: #e8b65a;
+  --badge-exec-bg: #15322d;
+  --badge-exec-fg: #6cc9b8;
+  --badge-agent-bg: #2e2445;
+  --badge-agent-fg: #b99cf0;
+  --badge-other-bg: #2a2d33;
+  --badge-other-fg: #b3bac4;
+  /* Diff lines */
+  --diff-add-bg: #16301f;
+  --diff-add-text: #8fdca5;
+  --diff-del-bg: #3a1d1c;
+  --diff-del-text: #f4a59c;
+  /* Subagents: parallel lanes, nested bodies, outline forks, hand-back reports */
+  --agent: #b99cf0;
+  --agent-muted: #a48bd6;
+  --agent-soft: #5d4a8a;
+  --agent-rail: #3f3560;
+  --agent-line: #352d4d;
+  --agent-border: #3a3152;
+  --agent-bg: #1c1a24;
+  --agent-hover: #2a2438;
+  --lane-border: #2f2a3d;
+  --lane-0: #9d80e6;
+  --lane-1: #5aa5e6;
+  --lane-2: #3fb7a0;
+  --lane-3: #e0a050;
+  --report-bg: #211e2a;
+  --report-border: #3a3152;
+  /* Jump highlight, shadows, hover */
+  --flash-bg: #3d3418;
+  --flash-ring: #a8862c;
+  --shadow-soft: rgb(0 0 0 / 0.35);
+  --shadow: rgb(0 0 0 / 0.4);
+  --shadow-strong: rgb(0 0 0 / 0.55);
+  --hover-brightness: 1.2;
 }
 
 * {
@@ -28,7 +236,7 @@ body {
 .page {
   max-width: 1160px;
   margin: 0 auto;
-  padding: 32px 16px 16px;
+  padding: 20px 16px 16px;
 }
 
 /* Dialogue on the left, outline beside it on the right. */
@@ -67,7 +275,7 @@ body {
     width: min(280px, 85vw);
     padding: 12px;
     background: var(--bg);
-    box-shadow: -8px 0 24px rgb(0 0 0 / 0.08);
+    box-shadow: -8px 0 24px var(--shadow);
     transform: translateX(100%);
     transition: transform 0.2s ease-out;
   }
@@ -80,49 +288,85 @@ body {
     max-height: 100%;
   }
 
-  /* Sits above the composer bar so the two do not overlap. */
+  /* Halfway down the right edge: the composer's height changes as its controls wrap, so a fixed
+     offset from the bottom would overlap it on some widths. */
   .outline-toggle {
     display: block;
     position: fixed;
     right: 16px;
-    bottom: 150px;
+    top: 50%;
+    transform: translateY(-50%);
     z-index: 21;
     padding: 9px 14px;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 999px;
-    box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+    box-shadow: 0 2px 10px var(--shadow);
     color: var(--text);
     font: 600 13px var(--sans);
     cursor: pointer;
   }
 }
 
+/* One compact row: the title with the mode's one-line description after it, and the theme switch on the right. */
 .header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 8px 16px;
+  margin-bottom: 14px;
+}
+
+.header-title {
+  display: flex;
   flex-wrap: wrap;
-  margin-bottom: 20px;
+  align-items: baseline;
+  gap: 0 12px;
+  min-width: 0;
 }
 
 h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 650;
   letter-spacing: -0.01em;
 }
 
 .subtitle {
-  margin: 2px 0 0;
+  margin: 0;
   color: var(--muted);
-  font-size: 13.5px;
+  font-size: 13px;
+}
+
+/* Page-wide controls on the right of the header: the shortcut list and the theme toggle. */
+.header-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Cycles System → Light → Dark; quiet until hovered so it does not compete with the title. */
+.theme-toggle {
+  flex: none;
+  padding: 3px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font: 600 12px/18px var(--sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 
 button.primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border: 0;
   border-radius: 8px;
   padding: 9px 18px;
@@ -130,7 +374,10 @@ button.primary {
   cursor: pointer;
 }
 
+/* Recording names are long session ids; cap the width so the Replay/Stop button stays on the row. */
 .fixture-select {
+  max-width: 280px;
+  text-overflow: ellipsis;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -235,7 +482,7 @@ button.primary:disabled {
 }
 
 .run-stats-total {
-  color: #a3a6ab;
+  color: var(--faint);
 }
 
 /* The prompt a live run was started with. */
@@ -250,7 +497,7 @@ button.primary:disabled {
   flex: none;
   padding: 1px 9px;
   border-radius: 999px;
-  background: #ecedf0;
+  background: var(--you-bg);
   color: var(--text);
   font: 600 12px var(--sans);
 }
@@ -262,12 +509,13 @@ button.primary:disabled {
 }
 
 /* The bar pinned to the bottom of the dialogue column: mode switch plus that mode's controls. */
-/* At least one screen tall, so the composer sits at the bottom of the window even before any run. */
+/* At least one screen tall, so the composer sits at the bottom of the window even before any run.
+   78px = page padding (20 + 16) + header row (28) + its margin (14). */
 .main-col {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: calc(100vh - 118px);
+  min-height: calc(100vh - 78px);
 }
 
 .main-col > .runs {
@@ -286,7 +534,7 @@ button.primary:disabled {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 -6px 18px rgb(0 0 0 / 0.06);
+  box-shadow: 0 -6px 18px var(--shadow-soft);
 }
 
 /* Keeps a strip of page background under the bar so the last run never shows through below it. */
@@ -310,8 +558,8 @@ button.primary:disabled {
   background: var(--text);
   border: 0;
   border-radius: 999px;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
-  color: #fff;
+  box-shadow: 0 4px 14px var(--shadow-strong);
+  color: var(--text-inverse);
   font: 600 12.5px var(--sans);
   cursor: pointer;
 }
@@ -327,7 +575,7 @@ button.stop {
 }
 
 button.stop:hover {
-  background: #fdecea;
+  background: var(--error-soft);
 }
 
 a.secondary {
@@ -392,19 +640,20 @@ a.secondary {
 .mode-switch button.active {
   background: var(--surface);
   color: var(--text);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  box-shadow: 0 1px 2px var(--shadow);
 }
 
 .mode-switch button:disabled {
   cursor: default;
 }
 
+/* Wide enough for a real path; when the row is too narrow the controls after it wrap instead of squeezing it. */
 .cwd-field {
   display: flex;
   flex: 1;
   align-items: center;
   gap: 8px;
-  min-width: 220px;
+  min-width: 300px;
   color: var(--muted);
   font-size: 12.5px;
 }
@@ -443,7 +692,7 @@ a.secondary {
 
 .prompt-row textarea:focus,
 .cwd-field input:focus {
-  outline: 2px solid #e4c4bf;
+  outline: 2px solid var(--focus-ring);
   outline-offset: -1px;
 }
 
@@ -467,8 +716,8 @@ button.secondary:disabled {
 .resumed {
   padding: 0 8px;
   border-radius: 999px;
-  background: #f7e9e7;
-  color: var(--accent);
+  background: var(--resumed-bg);
+  color: var(--resumed-fg);
   font: 600 12px/18px var(--mono);
 }
 
@@ -503,11 +752,11 @@ button.secondary:disabled {
   gap: 4px 10px;
   margin: 10px 0 4px;
   padding: 9px 12px;
-  background: #fff3f1;
-  border: 1px solid #f2c2bc;
+  background: var(--fail-bg);
+  border: 1px solid var(--fail-border);
   border-left: 3px solid var(--error);
   border-radius: 8px;
-  color: #8a1c12;
+  color: var(--fail-text);
   font: 13px/1.5 var(--mono);
 }
 
@@ -557,28 +806,28 @@ button.secondary:disabled {
 }
 
 .badge-read {
-  background: #e9f0fa;
-  color: #2b5797;
+  background: var(--badge-read-bg);
+  color: var(--badge-read-fg);
 }
 
 .badge-write {
-  background: #fcf0d9;
-  color: #8a5800;
+  background: var(--badge-write-bg);
+  color: var(--badge-write-fg);
 }
 
 .badge-exec {
-  background: #e1f1ee;
-  color: #12675d;
+  background: var(--badge-exec-bg);
+  color: var(--badge-exec-fg);
 }
 
 .badge-agent {
-  background: #efe8fb;
-  color: #5e35a6;
+  background: var(--badge-agent-bg);
+  color: var(--badge-agent-fg);
 }
 
 .badge-other {
-  background: #edeef0;
-  color: #4a5361;
+  background: var(--badge-other-bg);
+  color: var(--badge-other-fg);
 }
 
 .tool-summary {
@@ -611,7 +860,7 @@ button.secondary:disabled {
   height: 17px;
   border-radius: 50%;
   background: var(--error);
-  color: #fff;
+  color: var(--on-error);
   font-size: 10px;
   letter-spacing: 0;
 }
@@ -625,7 +874,7 @@ button.secondary:disabled {
 
 /* How long a finished tool took. */
 .call-took {
-  color: #a3a6ab;
+  color: var(--faint);
   font: 11.5px var(--mono);
 }
 
@@ -672,13 +921,13 @@ button.secondary:disabled {
 }
 
 .diff-add {
-  background: #e9f6ec;
-  color: #14532d;
+  background: var(--diff-add-bg);
+  color: var(--diff-add-text);
 }
 
 .diff-del {
-  background: #fdeceb;
-  color: #8a1c12;
+  background: var(--diff-del-bg);
+  color: var(--diff-del-text);
 }
 
 .diff-ctx {
@@ -736,13 +985,13 @@ button.secondary:disabled {
 }
 
 .tool-failed .tool-result {
-  background: #fff3f1;
-  border-color: #f2c2bc;
+  background: var(--fail-bg);
+  border-color: var(--fail-border);
   border-left: 3px solid var(--error);
 }
 
 .tool-failed .tool-result pre {
-  color: #8a1c12;
+  color: var(--fail-text);
 }
 
 .chevron {
@@ -777,9 +1026,9 @@ button.secondary:disabled {
 .parallel {
   margin: 6px 0 10px;
   padding: 8px 10px 10px;
-  border: 1px solid #e3d8f6;
+  border: 1px solid var(--agent-border);
   border-radius: 10px;
-  background: #fcfaff;
+  background: var(--agent-bg);
 }
 
 .parallel-head {
@@ -791,13 +1040,13 @@ button.secondary:disabled {
   background: none;
   border: 0;
   border-radius: 6px;
-  color: #5e35a6;
+  color: var(--agent);
   font: 650 13px var(--sans);
   cursor: pointer;
 }
 
 .parallel-head:hover {
-  background: #f4effc;
+  background: var(--agent-hover);
 }
 
 .parallel-head .call-pending {
@@ -819,30 +1068,30 @@ button.secondary:disabled {
 .lane-bg {
   border-radius: 8px;
   background: var(--surface);
-  border: 1px solid #ece6f7;
+  border: 1px solid var(--lane-border);
   border-top-width: 3px;
 }
 
 .lane-bg.lane-0 {
-  border-top-color: #8b6ad8;
+  border-top-color: var(--lane-0);
 }
 
 .lane-bg.lane-1 {
-  border-top-color: #3f8fd2;
+  border-top-color: var(--lane-1);
 }
 
 .lane-bg.lane-2 {
-  border-top-color: #2f9e8a;
+  border-top-color: var(--lane-2);
 }
 
 .lane-bg.lane-3 {
-  border-top-color: #d08a2e;
+  border-top-color: var(--lane-3);
 }
 
 .lane-head {
   min-width: 0;
   padding: 9px 10px 6px;
-  border-bottom: 1px dashed #e6def4;
+  border-bottom: 1px dashed var(--agent-line);
 }
 
 .lane-title {
@@ -877,7 +1126,7 @@ button.secondary:disabled {
 
 .lane-join {
   padding: 8px 6px 6px;
-  border-top: 1px dashed #e6def4;
+  border-top: 1px dashed var(--agent-line);
 }
 
 .lane-join .tool-result {
@@ -942,7 +1191,7 @@ button.secondary:disabled {
 
 .parallel-join {
   margin-top: 8px;
-  color: #6f55a8;
+  color: var(--agent-muted);
   font: 600 12px var(--sans);
   text-align: center;
 }
@@ -954,7 +1203,7 @@ button.secondary:disabled {
   width: 2px;
   height: 14px;
   margin: 4px auto -18px;
-  background: #c9b6ee;
+  background: var(--agent-soft);
 }
 
 .text-block.flash {
@@ -964,8 +1213,8 @@ button.secondary:disabled {
 @keyframes flash {
   0%,
   35% {
-    background: #fdf1cc;
-    box-shadow: 0 0 0 2px #f0cd6a;
+    background: var(--flash-bg);
+    box-shadow: 0 0 0 2px var(--flash-ring);
   }
 }
 
@@ -1035,7 +1284,7 @@ button.secondary:disabled {
 .outline-list .outline-list {
   margin: 4px 0 2px 10px;
   padding-left: 10px;
-  border-left: 2px solid #ddd0f3;
+  border-left: 2px solid var(--agent-rail);
 }
 
 /* The main agent's spine: one vertical line per run, each step tied to it by a short tick. */
@@ -1050,7 +1299,7 @@ button.secondary:disabled {
   top: 4px;
   bottom: 9px;
   left: 3px;
-  border-left: 2px solid #c8cbd1;
+  border-left: 2px solid var(--spine);
 }
 
 .outline-spine > li {
@@ -1063,12 +1312,12 @@ button.secondary:disabled {
   top: 9px;
   left: -11px;
   width: 9px;
-  border-top: 2px solid #c8cbd1;
+  border-top: 2px solid var(--spine);
 }
 
 .outline-spine > .outline-fork::before {
   top: 0;
-  border-top-color: #c9b6ee;
+  border-top-color: var(--agent-soft);
 }
 
 /* Text steps: a small "text" tag plus a one-line preview. */
@@ -1098,7 +1347,7 @@ button.secondary:disabled {
 }
 
 .outline-text:hover .outline-text-tag {
-  border-color: #b9bcc2;
+  border-color: var(--border-strong);
 }
 
 .outline-text-preview {
@@ -1124,8 +1373,8 @@ button.secondary:disabled {
   gap: 6px;
   overflow-x: auto;
   padding: 8px 0 8px;
-  border-top: 2px solid #c9b6ee;
-  border-bottom: 2px solid #c9b6ee;
+  border-top: 2px solid var(--agent-soft);
+  border-bottom: 2px solid var(--agent-soft);
   border-radius: 4px;
 }
 
@@ -1142,21 +1391,21 @@ button.secondary:disabled {
   top: -8px;
   left: 14px;
   height: 12px;
-  border-left: 2px solid #c9b6ee;
+  border-left: 2px solid var(--agent-soft);
 }
 
 .fork-col .outline-list .outline-list,
 .fork-col > .outline-list {
   margin: 4px 0 0;
   padding-left: 6px;
-  border-left: 2px solid #ddd0f3;
+  border-left: 2px solid var(--agent-rail);
 }
 
 /* Below the join bar the spine takes over again, leading on to the main agent's next step. */
 .fork-join {
   position: relative;
   margin-top: 2px;
-  color: #6f55a8;
+  color: var(--agent-muted);
   font: 600 10.5px var(--sans);
 }
 
@@ -1166,7 +1415,7 @@ button.secondary:disabled {
   top: -3px;
   left: -11px;
   width: 9px;
-  border-top: 2px solid #c9b6ee;
+  border-top: 2px solid var(--agent-soft);
 }
 
 .fork-col .outline-chip {
@@ -1206,7 +1455,7 @@ button.secondary:disabled {
 }
 
 .outline-chip:hover {
-  filter: brightness(0.95);
+  filter: brightness(var(--hover-brightness));
 }
 
 .outline-chip-pending {
@@ -1232,13 +1481,13 @@ button.secondary:disabled {
   background: none;
   border: 0;
   border-radius: 6px;
-  color: #5e35a6;
+  color: var(--agent);
   font: 600 12.5px var(--sans);
   cursor: pointer;
 }
 
 .subagent-head:hover {
-  background: #f4effc;
+  background: var(--agent-hover);
 }
 
 .subagent-chevron {
@@ -1257,7 +1506,7 @@ button.secondary:disabled {
 .subagent-body {
   margin-left: 4px;
   padding-left: 16px;
-  border-left: 2px solid #ddd0f3;
+  border-left: 2px solid var(--agent-rail);
 }
 
 /* Tool results: what the model was shown after the call ran */
@@ -1284,8 +1533,8 @@ button.secondary:disabled {
 
 /* A subagent's hand-back report: markdown body between the harness frame and trailer. */
 .subagent-report {
-  background: #fbf9ff;
-  border-color: #e6ddf6;
+  background: var(--report-bg);
+  border-color: var(--report-border);
 }
 
 .report-frame {
@@ -1310,6 +1559,7 @@ button.secondary:disabled {
 .report-body.folded {
   max-height: 220px;
   overflow: hidden;
+  /* A mask only reads alpha, so this black is not a visible color and needs no theme token. */
   -webkit-mask-image: linear-gradient(to bottom, #000 75%, transparent);
   mask-image: linear-gradient(to bottom, #000 75%, transparent);
 }
@@ -1356,7 +1606,7 @@ button.secondary:disabled {
   position: relative;
   margin: 16px 0 10px;
   padding: 12px 14px 10px;
-  background: #fcfcfa;
+  background: var(--text-block-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
 }

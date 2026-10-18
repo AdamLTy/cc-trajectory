@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent, ReactNode, Ref } from "react";
 
 export type Mode = "live" | "replay";
 
@@ -40,11 +40,13 @@ interface ComposerProps {
   onStop: () => void;
   live: LiveProps;
   replay: ReplayProps;
+  // The prompt textarea, so ⌘K/Ctrl+K can focus it from anywhere on the page.
+  promptRef?: Ref<HTMLTextAreaElement>;
 }
 
 // The bar pinned to the bottom of the dialogue: the mode switch plus the controls of the current mode.
 // While anything runs, the mode's main button turns into Stop.
-export function Composer({ mode, onMode, busy, onStop, live, replay }: ComposerProps) {
+export function Composer({ mode, onMode, busy, onStop, live, replay, promptRef }: ComposerProps) {
   return (
     <div className="composer">
       <div className="composer-row">
@@ -57,7 +59,7 @@ export function Composer({ mode, onMode, busy, onStop, live, replay }: ComposerP
         </div>
         {mode === "live" ? <LiveHeader {...live} busy={busy} /> : <ReplayRow {...replay} busy={busy} onStop={onStop} />}
       </div>
-      {mode === "live" && <PromptRow {...live} busy={busy} onStop={onStop} />}
+      {mode === "live" && <PromptRow {...live} busy={busy} onStop={onStop} promptRef={promptRef} />}
     </div>
   );
 }
@@ -110,7 +112,16 @@ function LiveHeader({ cwd, onCwd, sessionId, runCount, onNewSession, restoring, 
   );
 }
 
-function PromptRow({ prompt, onPrompt, onRun, cwd, sessionId, busy, onStop }: LiveProps & { busy: boolean; onStop: () => void }) {
+function PromptRow({
+  prompt,
+  onPrompt,
+  onRun,
+  cwd,
+  sessionId,
+  busy,
+  onStop,
+  promptRef,
+}: LiveProps & { busy: boolean; onStop: () => void; promptRef?: Ref<HTMLTextAreaElement> }) {
   const ready = !busy && prompt.trim() !== "" && cwd.trim() !== "";
   // Enter sends, Shift+Enter adds a line; Enter that confirms an IME composition (e.g. Chinese input) does not send.
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -122,6 +133,7 @@ function PromptRow({ prompt, onPrompt, onRun, cwd, sessionId, busy, onStop }: Li
   return (
     <div className="composer-row prompt-row">
       <textarea
+        ref={promptRef}
         value={prompt}
         onChange={(e) => onPrompt(e.target.value)}
         onKeyDown={onKeyDown}
@@ -140,7 +152,17 @@ function PromptRow({ prompt, onPrompt, onRun, cwd, sessionId, busy, onStop }: Li
   );
 }
 
-function ReplayRow({ fixtures, fixture, onFixture, nextRun, totalRuns, status, onReplay, busy, onStop }: ReplayProps & { busy: boolean; onStop: () => void }) {
+function ReplayRow({
+  fixtures,
+  fixture,
+  onFixture,
+  nextRun,
+  totalRuns,
+  status,
+  onReplay,
+  busy,
+  onStop,
+}: ReplayProps & { busy: boolean; onStop: () => void }) {
   const groups = (["fixtures", "recordings"] as const).map((group) => ({ group, names: fixtures.filter((f) => f.group === group).map((f) => f.name) }));
   return (
     <>

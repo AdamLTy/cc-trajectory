@@ -1,0 +1,107 @@
+/* Keyboard shortcut help: the overlay card and the "? shortcuts" hint in the composer. */
+
+:root {
+  --shortcut-backdrop: rgb(31 35 40 / 0.32);
+  --shortcut-shadow: rgb(0 0 0 / 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --shortcut-backdrop: rgb(0 0 0 / 0.55);
+    --shortcut-shadow: rgb(0 0 0 / 0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  --shortcut-backdrop: rgb(0 0 0 / 0.55);
+  --shortcut-shadow: rgb(0 0 0 / 0.5);
+}
+
+.shortcut-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--shortcut-backdrop);
+}
+
+.shortcut-card {
+  width: min(380px, 100%);
+  padding: 18px 20px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px var(--shortcut-shadow);
+  color: var(--text);
+}
+
+.shortcut-card h2 {
+  margin: 0 0 12px;
+  font: 650 15px var(--sans);
+}
+
+.shortcut-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.shortcut-row dt {
+  display: flex;
+  gap: 4px;
+  min-width: 64px;
+}
+
+.shortcut-row dd {
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.shortcut-card kbd {
+  min-width: 22px;
+  padding: 1px 6px;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  color: var(--text);
+  font: 600 12px var(--mono);
+  text-align: center;
+}
+
+.shortcut-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* A quiet hint next to the composer status, so the shortcuts can be found without knowing "?". */
+button.shortcut-hint {
+  padding: 2px 6px;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  font: 12px var(--sans);
+  cursor: pointer;
+}
+
+button.shortcut-hint:hover {
+  background: var(--subtle);
+  color: var(--text);
+}
+
+/* Touch screens have no keyboard to use the shortcuts with. */
+@media (hover: none) {
+  button.shortcut-hint {
+    display: none;
+  }
+}
