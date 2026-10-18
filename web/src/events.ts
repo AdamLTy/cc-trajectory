@@ -60,12 +60,25 @@ export interface ResultEvent {
   origin?: { kind: string } | null;
 }
 
+// Subagent lifecycle, emitted by the harness around an Agent/Task call. task_updated carries only the task_id,
+// so it is matched to its call through the task_id that task_started announced.
+export interface TaskEvent {
+  type: "system";
+  subtype: "task_started" | "task_updated" | "task_notification";
+  task_id: string;
+  tool_use_id?: string;
+  subagent_type?: string;
+  is_backgrounded?: boolean;
+  status?: string;
+  patch?: { status?: string };
+}
+
 export interface OtherEvent {
   type: string;
   subtype?: string;
 }
 
-export type StreamEvent = InitEvent | AssistantEvent | UserEvent | ResultEvent | OtherEvent;
+export type StreamEvent = InitEvent | AssistantEvent | UserEvent | ResultEvent | TaskEvent | OtherEvent;
 
 export function isInit(ev: StreamEvent): ev is InitEvent {
   return ev.type === "system" && ev.subtype === "init";
@@ -81,4 +94,8 @@ export function isUser(ev: StreamEvent): ev is UserEvent {
 
 export function isResult(ev: StreamEvent): ev is ResultEvent {
   return ev.type === "result";
+}
+
+export function isTask(ev: StreamEvent): ev is TaskEvent {
+  return ev.type === "system" && (ev.subtype === "task_started" || ev.subtype === "task_updated" || ev.subtype === "task_notification");
 }

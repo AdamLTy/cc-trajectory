@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { ToolItem } from "../trajectory.ts";
 import { ToolResultView } from "./ToolResult.tsx";
 
@@ -18,7 +18,9 @@ const CATEGORIES: Record<string, string> = {
   Task: "agent",
 };
 
-export function ToolCall({ item, cwd, runEnded }: { item: ToolItem; cwd: string; runEnded: boolean }) {
+// children (a subagent's nested events) render between the call and its result,
+// since the result of an Agent call is the report the subagent hands back.
+export function ToolCall({ item, cwd, runEnded, children }: { item: ToolItem; cwd: string; runEnded: boolean; children?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const category = CATEGORIES[item.name] ?? "other";
   const failed = item.result?.isError === true;
@@ -33,6 +35,7 @@ export function ToolCall({ item, cwd, runEnded }: { item: ToolItem; cwd: string;
         </span>
       </button>
       {open && <pre className="tool-input">{JSON.stringify(item.input, null, 2)}</pre>}
+      {children}
       {item.result && <ToolResultView result={item.result} />}
     </div>
   );

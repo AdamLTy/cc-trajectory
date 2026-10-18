@@ -1,4 +1,4 @@
-import { isAssistant, isInit, isResult, isUser, type StreamEvent, type ToolResultContent } from "./events.ts";
+import { isAssistant, isInit, isResult, isTask, isUser, type StreamEvent, type TaskEvent, type ToolResultContent } from "./events.ts";
 
 export interface TextItem {
   kind: "text";
@@ -15,6 +15,16 @@ export interface ToolItem {
   input: Record<string, unknown>;
   parentId: string | null;
   result?: ToolResult;
+  // Set on an Agent/Task call once the harness reports the subagent it spawned.
+  subagent?: Subagent;
+}
+
+export interface Subagent {
+  taskId: string;
+  type?: string;
+  background: boolean;
+  // "running" until task_updated / task_notification report e.g. "completed".
+  status: string;
 }
 
 export interface ToolResult {
@@ -133,7 +143,22 @@ function applyEvent(state: Trajectory, ev: StreamEvent): Trajectory {
     return { runs, eventCount };
   }
 
+  if (isTask(ev)) return { runs: updateSubagent(state.runs, ev), eventCount };
+
   return { ...state, eventCount };
+}
+
+// task_started announces the subagent behind an Agent/Task call; task_updated and task_notification report
+// when it ends. For a background subagent this is the only signal, since its tool_result returns at launch.
+function updateSubagent(runs: Run[], ev: TaskEvent): Run[] {
+  if (ev.subtype === "task_started") {
+    const subagent: Subagent = { taskId: ev.task_id, type: ev.subagent_type, background: ev.is_backgrounded === true, status: "running" };
+    return updateTool(runs, (t) => t.id === ev.tool_use_id, (t) => ({ ...t, subagent }));
+  }
+  const status = ev.subtype === "task_updated" ? ev.patch?.status : ev.status;
+  if (!status) return runs;
+  const matches = (t: ToolItem) => (ev.tool_use_id ? t.id === ev.tool_use_id : t.subagent?.taskId === ev.task_id);
+  return updateTool(runs, matches, (t) => ({ ...t, subagent: { ...(t.subagent ?? { taskId: ev.task_id, background: false }), status } }));
 }
 
 // total_cost_usd keeps counting across a session, so this run's share is the difference from the
@@ -144,14 +169,19 @@ function runCost(earlier: Run[], run: Run, sessionTotal: number): number | undef
   return run.resumed ? undefined : sessionTotal;
 }
 
-// Searches the newest run first, since a result almost always answers a call from the current run.
 function attachResult(runs: Run[], block: ToolResultContent): Run[] {
   const result: ToolResult = { text: resultText(block.content), isError: block.is_error === true };
+  return updateTool(runs, (t) => t.id === block.tool_use_id, (t) => ({ ...t, result }));
+}
+
+// Replaces the first tool call matching pred. Searches the newest run first, since a result or
+// lifecycle event almost always belongs to a call from the current run.
+function updateTool(runs: Run[], pred: (t: ToolItem) => boolean, update: (t: ToolItem) => ToolItem): Run[] {
   for (let r = runs.length - 1; r >= 0; r--) {
-    const i = runs[r].items.findIndex((item) => item.kind === "tool" && item.id === block.tool_use_id);
+    const i = runs[r].items.findIndex((item) => item.kind === "tool" && pred(item));
     if (i === -1) continue;
     const items = [...runs[r].items];
-    items[i] = { ...(items[i] as ToolItem), result };
+    items[i] = update(items[i] as ToolItem);
     return runs.map((run, k) => (k === r ? { ...run, items } : run));
   }
   return runs;

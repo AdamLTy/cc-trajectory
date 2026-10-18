@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
-import { TextBlock } from "./components/TextBlock.tsx";
-import { ToolCall } from "./components/ToolCall.tsx";
+import { ItemList } from "./components/ItemList.tsx";
 import { readNdjson } from "./ndjson.ts";
 import { emptyTrajectory, reducer, type Run, type RunStats, type RunStatus } from "./trajectory.ts";
 
@@ -117,13 +116,7 @@ function RunView({ run }: { run: Run }) {
         <span className="run-line" />
         <RunStatusBadge status={run.status} />
       </div>
-      {run.items.map((item) =>
-        item.kind === "text" ? (
-          <TextBlock key={item.key} text={item.text} />
-        ) : (
-          <ToolCall key={item.key} item={item} cwd={run.cwd} runEnded={ended} />
-        ),
-      )}
+      <ItemList items={run.items} cwd={run.cwd} runEnded={ended} />
       {run.failure && (
         <div className="run-error">
           <strong>{run.failure.kind}</strong>
