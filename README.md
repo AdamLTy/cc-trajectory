@@ -1,9 +1,10 @@
 # cc-trajectory
 
-Drive [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) from a web page and watch what the agent
-does while it does it: every message, tool call and result, subagents working in parallel, and what each run costs.
+**A live web UI for [Claude Code](https://docs.claude.com/en/docs/claude-code/overview).** Run the `claude` CLI
+headless from your browser and watch the agent's trajectory as it happens: every message, tool call and result,
+file diffs, subagents working in parallel, and what each run costs. Replay and export sessions afterwards.
 
-![Three parallel subagents streaming into side-by-side lanes, with the outline forking on the right](docs/screenshot.jpg)
+![cc-trajectory, a web UI for Claude Code: three parallel subagents streaming into side-by-side lanes, with the outline forking on the right](docs/screenshot.jpg)
 
 You type a prompt and pick a working directory. The server starts Claude Code in headless mode
 (`claude -p --output-format stream-json`), forwards its event stream to the browser line by line, and the page
