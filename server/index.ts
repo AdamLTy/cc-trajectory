@@ -1,8 +1,8 @@
 import http from "node:http";
 import path from "node:path";
-import { access, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { createServer as createViteServer } from "vite";
-import { replayLines } from "./replay.ts";
+import { readRuns, replayLines } from "./replay.ts";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = "127.0.0.1";
@@ -14,22 +14,29 @@ const vite = await createViteServer({ server: { middlewareMode: true }, appType:
 
 async function listFixtures(res: http.ServerResponse) {
   const names = (await readdir(FIXTURES_DIR)).filter((name) => name.endsWith(".jsonl")).sort();
+  const fixtures = await Promise.all(names.map(async (name) => ({ name, runs: (await readRuns(path.join(FIXTURES_DIR, name))).length })));
   res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(names));
+  res.end(JSON.stringify(fixtures));
 }
 
+// Replays one run of a fixture (?run=N, 1-based), so each request stands in for one follow-up prompt.
 async function handleReplay(url: URL, res: http.ServerResponse) {
   // Only bare .jsonl names inside fixtures/ are accepted, so the query cannot reach other files.
   const name = url.searchParams.get("file") ?? DEFAULT_FIXTURE;
-  const file = path.join(FIXTURES_DIR, name);
   if (path.basename(name) !== name || !name.endsWith(".jsonl")) {
     res.writeHead(400).end(`invalid fixture name: ${name}`);
     return;
   }
+  let runs: string[][];
   try {
-    await access(file);
+    runs = await readRuns(path.join(FIXTURES_DIR, name));
   } catch {
     res.writeHead(404).end(`no such fixture: ${name}`);
+    return;
+  }
+  const run = Number(url.searchParams.get("run") ?? 1);
+  if (!Number.isInteger(run) || run < 1 || run > runs.length) {
+    res.writeHead(400).end(`${name} has ${runs.length} run(s); run=${url.searchParams.get("run")} is out of range`);
     return;
   }
 
@@ -41,7 +48,7 @@ async function handleReplay(url: URL, res: http.ServerResponse) {
     "X-Content-Type-Options": "nosniff",
   });
   try {
-    for await (const line of replayLines(file, REPLAY_DELAY_MS, abort.signal)) {
+    for await (const line of replayLines(runs[run - 1], REPLAY_DELAY_MS, abort.signal)) {
       res.write(line + "\n");
     }
   } catch (err) {

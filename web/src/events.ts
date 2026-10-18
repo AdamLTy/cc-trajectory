@@ -51,6 +51,8 @@ export interface ResultEvent {
   subtype: string;
   is_error: boolean;
   errors?: string[];
+  // Set when the harness started this run itself, e.g. { kind: "task-notification" } after a background task finished.
+  origin?: { kind: string } | null;
 }
 
 export interface OtherEvent {

@@ -34,6 +34,10 @@ export interface Run {
   items: Item[];
   status: RunStatus;
   failure?: { kind: string; message: string };
+  // True when an earlier run had the same session id, i.e. this run continues that conversation.
+  resumed: boolean;
+  // Who started the run when it was not a prompt, from result.origin (e.g. "task-notification").
+  origin?: string;
 }
 
 export interface Trajectory {
@@ -53,7 +57,7 @@ export function reducer(state: Trajectory, action: Action): Trajectory {
 }
 
 function newRun(index: number, fields: Partial<Run> = {}): Run {
-  return { index, sessionId: "", model: "", cwd: "", items: [], status: "running", ...fields };
+  return { index, sessionId: "", model: "", cwd: "", items: [], status: "running", resumed: false, ...fields };
 }
 
 // A run that is still running when the stream closes never got its result event, so it failed.
@@ -72,13 +76,14 @@ function applyEvent(state: Trajectory, ev: StreamEvent): Trajectory {
 
   // Each init event starts a new run (a resumed session prints a fresh init).
   if (isInit(ev)) {
-    const run = newRun(state.runs.length + 1, { sessionId: ev.session_id, model: ev.model, cwd: ev.cwd });
+    const resumed = state.runs.some((r) => r.sessionId === ev.session_id);
+    const run = newRun(state.runs.length + 1, { sessionId: ev.session_id, model: ev.model, cwd: ev.cwd, resumed });
     return { runs: [...state.runs, run], eventCount };
   }
 
   // The result event closes the current run: is_error decides finished vs failed.
   if (isResult(ev) && state.runs.length > 0) {
-    const last = state.runs[state.runs.length - 1];
+    const last = { ...state.runs[state.runs.length - 1], origin: ev.origin?.kind };
     const ended: Run = ev.is_error
       ? { ...last, status: "failed", failure: { kind: ev.subtype, message: ev.errors?.join("\n") || ev.subtype } }
       : { ...last, status: "finished" };

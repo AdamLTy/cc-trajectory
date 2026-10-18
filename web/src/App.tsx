@@ -4,13 +4,25 @@ import { ToolCall } from "./components/ToolCall.tsx";
 import { readNdjson } from "./ndjson.ts";
 import { emptyTrajectory, reducer, type Run, type RunStatus } from "./trajectory.ts";
 
-type Status = { kind: "idle" } | { kind: "streaming" } | { kind: "done" } | { kind: "error"; message: string };
+type Status =
+  | { kind: "idle" }
+  | { kind: "streaming"; run: number }
+  | { kind: "done"; run: number }
+  | { kind: "error"; run: number; message: string };
+
+interface Fixture {
+  name: string;
+  runs: number;
+}
 
 export function App() {
   const [trajectory, dispatch] = useReducer(reducer, emptyTrajectory);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
-  const [fixtures, setFixtures] = useState<string[]>([]);
+  const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [fixture, setFixture] = useState("trace.jsonl");
+  // The run the button plays next (1-based). Back at 1 once every run of the fixture has been played.
+  const [nextRun, setNextRun] = useState(1);
+  const totalRuns = fixtures.find((f) => f.name === fixture)?.runs ?? 1;
   const nearBottom = useNearBottom();
 
   useEffect(() => {
@@ -25,20 +37,31 @@ export function App() {
     if (nearBottom.current) window.scrollTo({ top: document.documentElement.scrollHeight });
   }, [trajectory, nearBottom]);
 
-  async function replay() {
+  function chooseFixture(name: string) {
+    setFixture(name);
+    setNextRun(1);
+    setStatus({ kind: "idle" });
     dispatch({ type: "reset" });
-    setStatus({ kind: "streaming" });
+  }
+
+  // Plays one run per click. Run 1 starts a fresh trajectory; later runs are appended below it,
+  // the way a follow-up prompt continues the same session.
+  async function replay() {
+    const run = nextRun;
+    if (run === 1) dispatch({ type: "reset" });
+    setStatus({ kind: "streaming", run });
     try {
-      const res = await fetch(`/api/replay?file=${encodeURIComponent(fixture)}`);
+      const res = await fetch(`/api/replay?file=${encodeURIComponent(fixture)}&run=${run}`);
       if (!res.ok || !res.body) throw new Error(`replay request failed (HTTP ${res.status})`);
       for await (const event of readNdjson(res.body)) dispatch({ type: "event", event });
       dispatch({ type: "end" });
-      setStatus({ kind: "done" });
+      setStatus({ kind: "done", run });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       dispatch({ type: "end", error: message });
-      setStatus({ kind: "error", message });
+      setStatus({ kind: "error", run, message });
     }
+    setNextRun(run >= totalRuns ? 1 : run + 1);
   }
 
   const streaming = status.kind === "streaming";
@@ -50,16 +73,16 @@ export function App() {
           <p className="subtitle">Replaying a recorded stream-json run, event by event.</p>
         </div>
         <div className="controls">
-          <StatusText status={status} eventCount={trajectory.eventCount} />
-          <select className="fixture-select" value={fixture} onChange={(e) => setFixture(e.target.value)} disabled={streaming}>
-            {(fixtures.length > 0 ? fixtures : [fixture]).map((name) => (
+          <StatusText status={status} totalRuns={totalRuns} />
+          <select className="fixture-select" value={fixture} onChange={(e) => chooseFixture(e.target.value)} disabled={streaming}>
+            {(fixtures.length > 0 ? fixtures.map((f) => f.name) : [fixture]).map((name) => (
               <option key={name} value={name}>
                 {name}
               </option>
             ))}
           </select>
           <button className="primary" onClick={replay} disabled={streaming}>
-            Replay
+            {nextRun === 1 ? "Replay" : `Continue · run ${nextRun}/${totalRuns}`}
           </button>
         </div>
       </header>
@@ -83,7 +106,7 @@ function RunView({ run }: { run: Run }) {
     <section className="run card">
       <div className="run-divider">
         <span>Run {run.index}</span>
-        {run.sessionId && <span className="mono">session {run.sessionId.slice(0, 8)}…</span>}
+        <SessionLabel run={run} />
         {run.model && <span className="mono">{run.model}</span>}
         <span className="run-line" />
         <RunStatusBadge status={run.status} />
@@ -105,6 +128,18 @@ function RunView({ run }: { run: Run }) {
   );
 }
 
+// A run that shares its session id with an earlier one continues that conversation. Usually that is a resumed
+// follow-up prompt, but the harness can also start a run itself when a background task finishes.
+function SessionLabel({ run }: { run: Run }) {
+  if (!run.sessionId) return null;
+  const session = `${run.sessionId.slice(0, 8)}…`;
+  if (!run.resumed) return <span className="mono">session {session}</span>;
+  if (run.origin === "task-notification") {
+    return <span className="resumed">↻ auto-continued · background task notification</span>;
+  }
+  return <span className="resumed">↻ resumed session {session}</span>;
+}
+
 function RunStatusBadge({ status }: { status: RunStatus }) {
   switch (status) {
     case "running":
@@ -120,18 +155,21 @@ function RunStatusBadge({ status }: { status: RunStatus }) {
   }
 }
 
-function StatusText({ status, eventCount }: { status: Status; eventCount: number }) {
+function StatusText({ status, totalRuns }: { status: Status; totalRuns: number }) {
   switch (status.kind) {
     case "idle":
-      return null;
+      return totalRuns > 1 ? <span className="status">{totalRuns} runs recorded</span> : null;
     case "streaming":
       return (
         <span className="status status-live">
-          <span className="dot" /> streaming… {eventCount} events
+          <span className="dot" /> streaming run {status.run}/{totalRuns}…
         </span>
       );
-    case "done":
-      return <span className="status">done · {eventCount} events</span>;
+    case "done": {
+      const left = totalRuns - status.run;
+      if (left > 0) return <span className="status">{left === 1 ? "1 run left" : `${left} runs left`}</span>;
+      return <span className="status">{totalRuns === 1 ? "run replayed" : `all ${totalRuns} runs replayed`}</span>;
+    }
     case "error":
       return <span className="status status-error">{status.message}</span>;
   }
