@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
-import { isSpawner, type ToolItem } from "../trajectory.ts";
+import { callDuration, isSpawner, type ToolItem } from "../trajectory.ts";
 import { formatElapsed, useNow } from "../useNow.ts";
 import { DiffView, diffStats, editHunks } from "./DiffView.tsx";
 import { ReadResult, TaskView } from "./RichResults.tsx";
@@ -99,7 +99,7 @@ function DiffStat({ hunks }: { hunks: NonNullable<ReturnType<typeof editHunks>> 
 export function CallStatus({ item, runEnded }: { item: ToolItem; runEnded: boolean }) {
   const now = useNow();
   if (item.result) {
-    const took = item.endedAt !== undefined ? item.endedAt - item.startedAt : 0;
+    const took = callDuration(item) ?? 0;
     return (
       <span className="call-done">
         {took >= 100 && <span className="call-took">{formatElapsed(took)}</span>}

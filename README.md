@@ -19,7 +19,8 @@ renders the trajectory as it arrives. Follow-up prompts resume the same session,
 - Two levels of status: each call is pending until its result arrives, then ✓ or **FAILED**; each run is running,
   finished or failed, and a run that cannot start (e.g. a working directory that does not exist) shows why.
 - Live timers for the run and for each pending call, plus a "thinking…" line while the model is working on its
-  next step.
+  next step. Finished calls show how long they took, measured from the events' own timestamps, so replays and
+  restored sessions show the real durations too.
 - Stop button (or `Esc`) that ends the agent process.
 - Cost, wall-clock time and turn count for every finished run. Claude Code reports cost per session, so the page
   shows each run's own share next to the session total.
@@ -35,7 +36,8 @@ renders the trajectory as it arrives. Follow-up prompts resume the same session,
 - Subagent events nest under the call that started them. The group stays open while the subagent works and folds
   when it is done.
 - Subagents started together run side by side in time-aligned lanes: one row per event, so you can see how they
-  take turns. Their reports join back into the main agent at the bottom.
+  take turns. A timeline above the lanes draws each subagent's span to scale, with a tick for every call, and each
+  row shows when it happened. Their reports join back into the main agent at the bottom.
 - An outline beside the dialogue maps the whole trajectory, including forks and joins. It highlights where you are
   reading, and clicking a step jumps to it. On narrow windows it folds away.
 

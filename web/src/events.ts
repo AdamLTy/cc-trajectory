@@ -28,6 +28,8 @@ export interface AssistantEvent {
   message: { id: string; content: ContentBlock[] };
   // The tool call (an Agent/Task call) that spawned the subagent emitting this event; null for the main agent.
   parent_tool_use_id: string | null;
+  // When the message was written (ISO, ms precision). Assistant and user events carry it; partial pieces do not.
+  timestamp?: string;
 }
 
 // What the model is shown after a tool runs. content is either plain text or a list of blocks
@@ -43,6 +45,8 @@ export interface UserEvent {
   type: "user";
   message: { content: string | (ToolResultContent | { type: "text"; text: string })[] };
   parent_tool_use_id: string | null;
+  // When the tool results came back (ISO, ms precision).
+  timestamp?: string;
 }
 
 // Printed once when a run ends. is_error marks a failed run (e.g. subtype "error_max_turns").
@@ -70,7 +74,8 @@ export interface TaskEvent {
   subagent_type?: string;
   is_backgrounded?: boolean;
   status?: string;
-  patch?: { status?: string };
+  // end_time (epoch ms) marks when the subagent finished.
+  patch?: { status?: string; end_time?: number };
 }
 
 // Added by our server around a live run: a run that could not start or died early, the process exit, and

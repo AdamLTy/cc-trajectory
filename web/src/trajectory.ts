@@ -24,6 +24,8 @@ export interface TextItem {
   streaming?: boolean;
   messageId?: string;
   blockIndex?: number;
+  // When the message was written (ms), from the event's own timestamp; set once the text is complete.
+  ts?: number;
 }
 
 export interface ToolItem {
@@ -36,9 +38,14 @@ export interface ToolItem {
   parentId: string | null;
   // The assistant message that requested the call; calls requested together in one message run in parallel.
   messageId: string;
-  // When the tool_use and its tool_result arrived (ms), for the per-call timers.
+  // When the tool_use and its tool_result arrived at the page (ms). Live "pending · 3s" timers compare these
+  // with the clock; a replay delivers old events, so its arrival times say nothing about the real run.
   startedAt: number;
   endedAt?: number;
+  // When the call was issued and when its result came back, from the events' own timestamps (ms).
+  // These are true to the run in live mode, in replays and in restored sessions alike.
+  issuedTs?: number;
+  resultTs?: number;
   result?: ToolResult;
   // Set on an Agent/Task call once the harness reports the subagent it spawned.
   subagent?: Subagent;
@@ -50,6 +57,8 @@ export interface Subagent {
   background: boolean;
   // "running" until task_updated / task_notification report e.g. "completed".
   status: string;
+  // When the subagent finished (ms), from task_updated's end_time.
+  endedTs?: number;
 }
 
 export interface ToolResult {
@@ -97,6 +106,24 @@ export function targetOf(item: Item): string {
 
 export function containsTarget(rootId: string, target: string, tree: ChildMap): boolean {
   return descendants(rootId, tree).some((item) => targetOf(item) === target);
+}
+
+// How long a call took: from the events' timestamps when both are known, else from when the page saw them.
+export function callDuration(call: ToolItem): number | undefined {
+  if (call.issuedTs !== undefined && call.resultTs !== undefined) return call.resultTs - call.issuedTs;
+  return call.endedAt !== undefined ? call.endedAt - call.startedAt : undefined;
+}
+
+// When a subagent started and finished (ms, event time). A background subagent's tool_result comes back
+// at launch, so its end is task_updated's end_time; end is undefined while it is still running.
+export function subagentSpan(call: ToolItem): { start?: number; end?: number } {
+  const end = call.subagent?.endedTs ?? (call.subagent?.background ? undefined : call.resultTs);
+  return { start: call.issuedTs, end };
+}
+
+// The event time of an item: when a call was issued, or when a text was written.
+export function itemTime(item: Item): number | undefined {
+  return item.kind === "tool" ? item.issuedTs : item.ts;
 }
 
 // The harness's task status is authoritative when present: a background subagent's tool_result
@@ -329,6 +356,7 @@ function applyEvent(state: Trajectory, ev: StreamEvent, at: number): Trajectory 
     let items = [...last.items];
     const parentId = ev.parent_tool_use_id ?? null;
     const messageId = ev.message.id;
+    const ts = parseTimestamp(ev.timestamp);
     for (const block of ev.message.content) {
       const seq = items.length;
       const key = `${last.index}:${seq}`;
@@ -336,13 +364,14 @@ function applyEvent(state: Trajectory, ev: StreamEvent, at: number): Trajectory 
         const streamed = items.findIndex((item) => item.kind === "text" && item.streaming && item.messageId === messageId);
         if (streamed !== -1) {
           items = block.text.trim()
-            ? items.map((item, i) => (i === streamed ? { ...(item as TextItem), text: block.text, streaming: false } : item))
+            ? items.map((item, i) => (i === streamed ? { ...(item as TextItem), text: block.text, streaming: false, ts } : item))
             : items.filter((_, i) => i !== streamed);
         } else if (block.text.trim()) {
-          items.push({ kind: "text", key, seq, text: block.text, parentId });
+          items.push({ kind: "text", key, seq, text: block.text, parentId, ts });
         }
       } else if (block.type === "tool_use") {
-        items.push({ kind: "tool", key, seq, id: block.id, name: block.name, input: block.input ?? {}, parentId, messageId, startedAt: at });
+        const input = block.input ?? {};
+        items.push({ kind: "tool", key, seq, id: block.id, name: block.name, input, parentId, messageId, startedAt: at, issuedTs: ts });
       }
     }
     return withRuns(replaceLast(runs, { ...last, items, activity: { kind: "waiting", since: at } }));
@@ -352,7 +381,7 @@ function applyEvent(state: Trajectory, ev: StreamEvent, at: number): Trajectory 
   if (isUser(ev) && Array.isArray(ev.message.content)) {
     let updated = state.runs;
     for (const block of ev.message.content) {
-      if (block.type === "tool_result") updated = attachResult(updated, block as ToolResultContent, at);
+      if (block.type === "tool_result") updated = attachResult(updated, block as ToolResultContent, at, parseTimestamp(ev.timestamp));
     }
     const current = updated.at(-1);
     if (current) updated = replaceLast(updated, { ...current, activity: { kind: "waiting", since: at } });
@@ -377,8 +406,12 @@ function updateSubagent(runs: Run[], ev: TaskEvent): Run[] {
   }
   const status = ev.subtype === "task_updated" ? ev.patch?.status : ev.status;
   if (!status) return runs;
+  const endedTs = ev.patch?.end_time;
   const matches = (t: ToolItem) => (ev.tool_use_id ? t.id === ev.tool_use_id : t.subagent?.taskId === ev.task_id);
-  return updateTool(runs, matches, (t) => ({ ...t, subagent: { ...(t.subagent ?? { taskId: ev.task_id, background: false }), status } }));
+  return updateTool(runs, matches, (t) => {
+    const previous = t.subagent ?? { taskId: ev.task_id, background: false, status };
+    return { ...t, subagent: { ...previous, status, endedTs: endedTs ?? previous.endedTs } };
+  });
 }
 
 // total_cost_usd keeps counting across a session, so this run's share is the difference from the
@@ -389,9 +422,15 @@ function runCost(earlier: Run[], run: Run, sessionTotal: number): number | undef
   return run.resumed ? undefined : sessionTotal;
 }
 
-function attachResult(runs: Run[], block: ToolResultContent, at: number): Run[] {
+function attachResult(runs: Run[], block: ToolResultContent, at: number, resultTs: number | undefined): Run[] {
   const result: ToolResult = { text: resultText(block.content), isError: block.is_error === true };
-  return updateTool(runs, (t) => t.id === block.tool_use_id, (t) => ({ ...t, result, endedAt: at }));
+  return updateTool(runs, (t) => t.id === block.tool_use_id, (t) => ({ ...t, result, endedAt: at, resultTs }));
+}
+
+// Event timestamps are ISO strings; anything unparsable counts as unknown.
+function parseTimestamp(value: string | undefined): number | undefined {
+  const ms = value ? Date.parse(value) : NaN;
+  return Number.isNaN(ms) ? undefined : ms;
 }
 
 // Replaces the first tool call matching pred. Searches the newest run first, since a result or
